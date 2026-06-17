@@ -4,7 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GenWise AI/ML Classroom</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <style id="critical-ui">
+    .hidden { display: none !important; }
+    .view { display: none; }
+    .active-view { display: grid; }
+    #app-view.hidden { display: none !important; }
+    .teacher-only.hidden, .student-only.hidden { display: none !important; }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
   <div id="toast" aria-live="polite"></div>
@@ -390,6 +397,6 @@
     </div>
   </dialog>
 
-  <script src="/static/app.js"></script>
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
