@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GenWise AI/ML Classroom</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="toast" aria-live="polite"></div>
+
+  <section id="auth-view" class="auth-shell">
+      <div class="auth-brand">
+      <div class="brand-mark">GW</div>
+      <div>
+        <h1>GenWise AI/ML Classroom</h1>
+        <p>A focused classroom space for AI/ML resources, research questions, student work, and teacher feedback.</p>
+      </div>
+    </div>
+
+    <div class="auth-grid">
+      <form id="login-form" class="panel auth-card">
+        <div class="panel-heading">
+          <h2>Sign In</h2>
+          <span>Classroom account</span>
+        </div>
+        <label>Email
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="primary" type="submit">Sign in</button>
+        <p class="hint">No account yet? <button id="jump-to-signup" class="link-button" type="button">Sign up</button></p>
+        <p class="hint">New users can sign up, then wait for teacher approval.</p>
+      </form>
+
+      <form id="register-form" class="panel auth-card">
+        <div class="panel-heading">
+          <h2>Sign Up</h2>
+          <span>Teacher approval required</span>
+        </div>
+        <p class="hint">Use your own email address and choose your own password. Teachers approve accounts, but they cannot see passwords.</p>
+        <label>Name
+          <input name="name" type="text" autocomplete="name" required>
+        </label>
+        <label>Email
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <fieldset class="role-picker">
+          <legend>Register as</legend>
+          <label>
+            <input name="role" value="student" type="radio" checked>
+            <span>Student</span>
+          </label>
+          <label>
+            <input name="role" value="teacher" type="radio">
+            <span>Teacher</span>
+          </label>
+        </fieldset>
+        <button type="submit">Sign up</button>
+      </form>
+    </div>
+  </section>
+
+  <div id="app-view" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark">GW</div>
+        <div>
+          <strong>GenWise</strong>
+          <span>AI/ML Classroom</span>
+        </div>
+      </div>
+
+      <nav class="nav-list">
+        <button class="nav-button active" data-section="dashboard">Dashboard</button>
+        <button class="nav-button" data-section="resources">Resources</button>
+        <button class="nav-button" data-section="inbox">Inbox</button>
+        <button class="nav-button" data-section="submissions">Submissions</button>
+        <button class="nav-button teacher-only" data-section="teacher-room">Teacher Room</button>
+        <button class="nav-button teacher-only" data-section="people">People</button>
+        <button class="nav-button" data-section="ai">AI Assistant</button>
+        <button class="nav-button" data-section="saved">Saved</button>
+      </nav>
+
+      <button id="theme-toggle" class="soft-button" type="button">Toggle theme</button>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Classroom Portal</p>
+          <h1 id="section-title">Dashboard</h1>
+        </div>
+        <div class="top-actions">
+          <button id="top-signup-button" class="soft-button" type="button">Sign up</button>
+          <button id="account-button" class="soft-button" type="button">Account</button>
+          <button id="notification-button" class="soft-button" type="button">Notifications <span id="notification-count">0</span></button>
+          <span id="user-pill" class="user-pill"></span>
+          <button id="logout-button" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section id="dashboard" class="view active-view">
+        <div id="dashboard-grid" class="dashboard-grid"></div>
+      </section>
+
+      <section id="resources" class="view">
+        <div class="section-tools">
+          <div class="search-box">
+            <input id="resource-search" type="search" placeholder="Search resources, tags, prompts, links, notes">
+            <button id="resource-search-button" type="button">Search</button>
+          </div>
+          <div class="segmented">
+            <button class="active" data-resource-view="cards" type="button">Cards</button>
+            <button data-resource-view="list" type="button">List</button>
+          </div>
+        </div>
+
+        <form id="resource-form" class="panel form-grid" enctype="multipart/form-data">
+          <div class="panel-heading full-span">
+            <h2>Add Resource</h2>
+            <span class="teacher-only">Published publicly by teachers</span>
+            <span class="student-only">Sent privately to teachers first</span>
+          </div>
+          <label>Title
+            <input name="title" type="text" required>
+          </label>
+          <label>Type
+            <select name="kind">
+              <option value="resource">Resource</option>
+              <option value="prompt">Prompt</option>
+              <option value="note">Class note</option>
+              <option value="fact">Fact</option>
+              <option value="link">Link</option>
+              <option value="interesting">Interesting info</option>
+            </select>
+          </label>
+          <label class="full-span">Description
+            <textarea name="description" rows="3"></textarea>
+          </label>
+          <label class="full-span">Text / Prompt / Notes
+            <textarea name="body" rows="4"></textarea>
+          </label>
+          <label>Link
+            <input name="url" type="url" placeholder="https://">
+          </label>
+          <label>Tags
+            <input name="tags" type="text" placeholder="Type your own tags">
+          </label>
+          <label>File
+            <input name="file" type="file">
+          </label>
+          <label class="check-line">
+            <input name="pinned" value="true" type="checkbox">
+            Pin resource
+          </label>
+          <button class="primary full-span" type="submit">Publish resource</button>
+        </form>
+
+        <div id="resource-reviews-panel" class="panel stacked">
+          <div class="panel-heading">
+            <h2 class="teacher-only">Student Resource Uploads</h2>
+            <h2 class="student-only">My Resource Uploads</h2>
+            <span class="teacher-only">Review before publishing</span>
+            <span class="student-only">Only you and teachers can see these</span>
+          </div>
+          <div id="resource-reviews-list" class="item-grid"></div>
+        </div>
+
+        <div id="resources-list" class="item-grid"></div>
+      </section>
+
+      <section id="inbox" class="view">
+        <form id="inbox-form" class="panel form-grid" enctype="multipart/form-data">
+          <div class="panel-heading full-span">
+            <h2>Post to Inbox</h2>
+            <span>Visible to everyone</span>
+          </div>
+          <label>Title
+            <input name="title" type="text" required>
+          </label>
+          <label>Link
+            <input name="url" type="url" placeholder="https://">
+          </label>
+          <label class="full-span">Message
+            <textarea name="body" rows="4"></textarea>
+          </label>
+          <label>Attachment
+            <input name="file" type="file">
+          </label>
+          <label class="check-line teacher-only">
+            <input name="pinned" value="true" type="checkbox">
+            Pin message
+          </label>
+          <button class="primary full-span" type="submit">Post message</button>
+        </form>
+        <div id="inbox-list" class="feed"></div>
+      </section>
+
+      <section id="submissions" class="view">
+        <form id="submission-form" class="panel form-grid student-only" enctype="multipart/form-data">
+          <div class="panel-heading full-span">
+            <h2>Upload Submission</h2>
+            <span>Private between you and teachers</span>
+          </div>
+          <label>Title
+            <input name="title" type="text" required>
+          </label>
+          <label>Link
+            <input name="url" type="url" placeholder="https://">
+          </label>
+          <label class="full-span">Description
+            <textarea name="description" rows="3"></textarea>
+          </label>
+          <label class="full-span">Text Entry
+            <textarea name="text_content" rows="5"></textarea>
+          </label>
+          <label>File
+            <input name="file" type="file">
+          </label>
+          <button class="primary full-span" type="submit">Send to teachers</button>
+        </form>
+        <div id="submissions-list" class="item-grid"></div>
+      </section>
+
+      <section id="teacher-room" class="view teacher-only">
+        <form id="teacher-room-form" class="panel form-grid" enctype="multipart/form-data">
+          <div class="panel-heading full-span">
+            <h2>Teacher Room Item</h2>
+            <span>Only teachers can see this</span>
+          </div>
+          <label>Title
+            <input name="title" type="text" required>
+          </label>
+          <label>Type
+            <select name="kind">
+              <option value="note">Note</option>
+              <option value="file">File</option>
+              <option value="link">Link</option>
+              <option value="plan">Planning</option>
+            </select>
+          </label>
+          <label class="full-span">Description
+            <textarea name="description" rows="3"></textarea>
+          </label>
+          <label class="full-span">Private Notes
+            <textarea name="body" rows="4"></textarea>
+          </label>
+          <label>Link
+            <input name="url" type="url" placeholder="https://">
+          </label>
+          <label>Tags
+            <input name="tags" type="text">
+          </label>
+          <label>File
+            <input name="file" type="file">
+          </label>
+          <label class="check-line">
+            <input name="pinned" value="true" type="checkbox">
+            Pin item
+          </label>
+          <button class="primary full-span" type="submit">Save teacher item</button>
+        </form>
+        <div id="teacher-room-list" class="item-grid"></div>
+      </section>
+
+      <section id="people" class="view teacher-only">
+        <div class="panel">
+          <div class="panel-heading">
+            <h2>People</h2>
+            <span>Approve signups and manage accounts</span>
+          </div>
+          <div id="people-list" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <section id="ai" class="view">
+        <div class="ai-layout">
+          <form id="ai-profile-form" class="panel stacked">
+            <div class="panel-heading">
+              <h2>AI Assistant Settings</h2>
+              <span>Private to you</span>
+            </div>
+            <label>Tone
+              <input name="tone" type="text">
+            </label>
+            <label>Helpfulness style
+              <textarea name="helpfulness" rows="4"></textarea>
+            </label>
+            <label>Research focus
+              <textarea name="focus" rows="4"></textarea>
+            </label>
+            <label>Custom instructions
+              <textarea name="custom_instructions" rows="5"></textarea>
+            </label>
+            <button type="submit">Save settings</button>
+          </form>
+
+          <div class="panel ai-chat">
+            <div class="panel-heading">
+              <h2>AI Assistant</h2>
+              <span>Research and questions only</span>
+            </div>
+            <div id="ai-messages" class="ai-messages"></div>
+            <form id="ai-chat-form" class="chat-row">
+              <textarea name="message" rows="2" placeholder="Ask a research question about AI/ML or class resources"></textarea>
+              <button class="primary" type="submit">Ask</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section id="saved" class="view">
+        <div id="saved-list" class="item-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="submission-dialog">
+    <div class="dialog-head">
+      <h2 id="submission-dialog-title">Submission</h2>
+      <button id="close-submission-dialog" type="button">Close</button>
+    </div>
+    <div id="submission-dialog-body"></div>
+  </dialog>
+
+  <dialog id="notifications-dialog">
+    <div class="dialog-head">
+      <h2>Notifications</h2>
+      <button id="close-notifications-dialog" type="button">Close</button>
+    </div>
+    <div id="notifications-list"></div>
+  </dialog>
+
+  <dialog id="signup-dialog">
+    <div class="dialog-head">
+      <h2>Sign Up</h2>
+      <button id="close-signup-dialog" type="button">Close</button>
+    </div>
+    <form id="top-signup-form" class="stacked">
+      <p class="hint">Use the person's own email and let them choose their own password. New accounts wait for teacher approval before entering the classroom.</p>
+      <label>Name
+        <input name="name" type="text" autocomplete="name" required>
+      </label>
+      <label>Email
+        <input name="email" type="email" autocomplete="email" required>
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <fieldset class="role-picker">
+        <legend>Register as</legend>
+        <label>
+          <input name="role" value="student" type="radio" checked>
+          <span>Student</span>
+        </label>
+        <label>
+          <input name="role" value="teacher" type="radio">
+          <span>Teacher</span>
+        </label>
+      </fieldset>
+      <button class="primary" type="submit">Sign up</button>
+    </form>
+  </dialog>
+
+  <dialog id="account-dialog">
+    <div class="dialog-head">
+      <h2>Account</h2>
+      <button id="close-account-dialog" type="button">Close</button>
+    </div>
+    <div class="stacked">
+      <div>
+        <h3 id="account-name"></h3>
+        <p id="account-email" class="hint"></p>
+      </div>
+      <form id="password-form" class="stacked">
+        <label>Current password
+          <input name="current_password" type="password" autocomplete="current-password" required>
+        </label>
+        <label>New password
+          <input name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <button class="primary" type="submit">Change password</button>
+      </form>
+    </div>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
