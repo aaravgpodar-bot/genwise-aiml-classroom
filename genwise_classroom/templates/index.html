@@ -39,15 +39,16 @@
         </label>
         <button class="primary" type="submit">Sign in</button>
         <p class="hint">No account yet? <button id="jump-to-signup" class="link-button" type="button">Sign up</button></p>
-        <p class="hint">New users can sign up, then wait for teacher approval.</p>
+        <p class="hint"><button id="forgot-password-button" class="link-button" type="button">Forgot password?</button></p>
+        <p class="hint">New users can sign up and enter the classroom right away.</p>
       </form>
 
       <form id="register-form" class="panel auth-card">
         <div class="panel-heading">
           <h2>Sign Up</h2>
-          <span>Teacher approval required</span>
+          <span>Instant access</span>
         </div>
-        <p class="hint">Use your own email address and choose your own password. Teachers approve accounts, but they cannot see passwords.</p>
+        <p class="hint">Use your own email address, choose your own password, and pick the role you need for camp.</p>
         <label>Name
           <input name="name" type="text" autocomplete="name" required>
         </label>
@@ -170,8 +171,7 @@
         <form id="resource-form" class="panel form-grid" enctype="multipart/form-data">
           <div class="panel-heading full-span">
             <h2>Add Resource</h2>
-            <span class="teacher-only">Published publicly by teachers</span>
-            <span class="student-only">Sent privately to teachers first</span>
+            <span>Shared with the whole classroom</span>
           </div>
           <label>Title
             <input name="title" type="text" required>
@@ -210,10 +210,9 @@
 
         <div id="resource-reviews-panel" class="panel stacked">
           <div class="panel-heading">
-            <h2 class="teacher-only">Student Resource Uploads</h2>
-            <h2 class="student-only">My Resource Uploads</h2>
-            <span class="teacher-only">Review before publishing</span>
-            <span class="student-only">Only you and teachers can see these</span>
+            <h2 class="teacher-only">Older Resource Reviews</h2>
+            <h2 class="student-only">Older Private Uploads</h2>
+            <span>Past uploads from before instant sharing</span>
           </div>
           <div id="resource-reviews-list" class="item-grid"></div>
         </div>
@@ -229,11 +228,6 @@
           </div>
           <label>Title
             <input name="title" type="text" required>
-          </label>
-          <label>Assignment
-            <select id="submission-assignment-select" name="assignment_id">
-              <option value="">No assignment</option>
-            </select>
           </label>
           <label>Link
             <input name="url" type="url" placeholder="https://">
@@ -254,16 +248,27 @@
       </section>
 
       <section id="submissions" class="view">
-        <form id="submission-form" class="panel form-grid student-only" enctype="multipart/form-data">
+        <form id="submission-form" class="panel form-grid" enctype="multipart/form-data">
           <div class="panel-heading full-span">
-            <h2>Upload Submission</h2>
-            <span>Private between you and teachers</span>
+            <h2>Share Submission</h2>
+            <span>Private or class-wide</span>
           </div>
           <label>Title
             <input name="title" type="text" required>
           </label>
+          <label>Assignment
+            <select id="submission-assignment-select" name="assignment_id">
+              <option value="">No assignment</option>
+            </select>
+          </label>
           <label>Link
             <input name="url" type="url" placeholder="https://">
+          </label>
+          <label>Visibility
+            <select name="visibility">
+              <option value="private">Private to me and teachers</option>
+              <option value="class">Share with the whole class</option>
+            </select>
           </label>
           <label class="full-span">Description
             <textarea name="description" rows="3"></textarea>
@@ -274,7 +279,7 @@
           <label>File
             <input name="file" type="file">
           </label>
-          <button class="primary full-span" type="submit">Send to teachers</button>
+          <button class="primary full-span" type="submit">Share submission</button>
         </form>
         <div id="submissions-list" class="item-grid"></div>
       </section>
@@ -324,7 +329,7 @@
         <div class="panel">
           <div class="panel-heading">
             <h2>People</h2>
-            <span>Approve signups and manage accounts</span>
+            <span>Manage roles and accounts</span>
           </div>
           <div id="people-list" class="table-wrap"></div>
         </div>
@@ -394,7 +399,7 @@
       <button id="close-signup-dialog" type="button">Close</button>
     </div>
     <form id="top-signup-form" class="stacked">
-      <p class="hint">Use the person's own email and let them choose their own password. New accounts wait for teacher approval before entering the classroom.</p>
+      <p class="hint">Use the person's own email and let them choose their own password. New accounts can enter the classroom right away.</p>
       <label>Name
         <input name="name" type="text" autocomplete="name" required>
       </label>
@@ -417,6 +422,38 @@
       </fieldset>
       <button class="primary" type="submit">Sign up</button>
     </form>
+  </dialog>
+
+  <dialog id="password-reset-dialog">
+    <div class="dialog-head">
+      <h2>Reset Password</h2>
+      <button id="close-password-reset-dialog" type="button">Close</button>
+    </div>
+    <div class="stacked">
+      <form id="password-reset-request-form" class="stacked">
+        <p class="hint">Enter your account email to create a short reset code.</p>
+        <label>Email
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <button class="primary" type="submit">Get reset code</button>
+      </form>
+      <div id="password-reset-code-panel" class="reply hidden">
+        <strong>Prototype reset code</strong>
+        <p id="password-reset-code"></p>
+      </div>
+      <form id="password-reset-confirm-form" class="stacked">
+        <label>Email
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>Reset code
+          <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+        </label>
+        <label>New password
+          <input name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <button class="primary" type="submit">Reset password</button>
+      </form>
+    </div>
   </dialog>
 
   <dialog id="account-dialog">

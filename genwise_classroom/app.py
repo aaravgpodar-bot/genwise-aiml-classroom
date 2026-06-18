@@ -5,7 +5,7 @@ import shutil
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -281,6 +281,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS submissions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 assignment_id INTEGER,
+                visibility TEXT NOT NULL DEFAULT 'private',
                 title TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 text_content TEXT NOT NULL DEFAULT '',
@@ -304,6 +305,16 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (submission_id) REFERENCES submissions(id),
                 FOREIGN KEY (teacher_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS password_reset_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS notifications (
@@ -330,6 +341,12 @@ def init_db() -> None:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(submissions)").fetchall()}
         if "assignment_id" not in columns:
             db.execute("ALTER TABLE submissions ADD COLUMN assignment_id INTEGER REFERENCES assignments(id)")
+        if "visibility" not in columns:
+            db.execute("ALTER TABLE submissions ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'")
+        comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(submission_comments)").fetchall()}
+        if "author_id" not in comment_columns:
+            db.execute("ALTER TABLE submission_comments ADD COLUMN author_id INTEGER")
+            db.execute("UPDATE submission_comments SET author_id = teacher_id WHERE author_id IS NULL")
         db.commit()
 
 
@@ -477,6 +494,8 @@ def require_submission_access(submission_id: int) -> dict:
     item = row_to_dict(row)
     if not item:
         abort(404)
+    if item.get("visibility") == "class":
+        return item
     if user["role"] != "teacher" and item["student_id"] != user["id"]:
         abort(403)
     return item
@@ -518,27 +537,18 @@ def api_register():
     if not name or not email or len(password) < 8:
         return jsonify({"error": "Enter a name, email, and password with at least 8 characters."}), 400
 
-    with get_db() as db:
-        user_count = db.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"]
-    is_first_user = user_count == 0
-    if is_first_user:
-        role = "teacher"
-
     try:
         execute_db(
             """
             INSERT INTO users (name, email, password_hash, role, approved, disabled, created_at)
             VALUES (?, ?, ?, ?, ?, 0, ?)
             """,
-            (name, email, generate_password_hash(password), role, 1 if is_first_user else 0, now_iso()),
+            (name, email, generate_password_hash(password), role, 1, now_iso()),
         )
     except sqlite3.IntegrityError:
         return jsonify({"error": "An account with that email already exists."}), 400
 
-    if is_first_user:
-        return jsonify({"ok": True, "message": "First teacher account created. You can sign in now."})
-
-    return jsonify({"ok": True, "message": "Account requested. A teacher needs to approve it."})
+    return jsonify({"ok": True, "message": "Account created. You can sign in now."})
 
 
 @app.route("/api/login", methods=["POST"])
@@ -554,9 +564,104 @@ def api_login():
     if user["disabled"]:
         return jsonify({"error": "This account is disabled."}), 403
     if not user["approved"]:
-        return jsonify({"error": "This account is waiting for teacher approval."}), 403
+        return jsonify({"error": "This account is not active yet."}), 403
     session["user_id"] = user["id"]
     return jsonify({"ok": True, "user": public_user(user)})
+
+
+@app.route("/api/password-reset/request", methods=["POST"])
+def api_password_reset_request():
+    data = request.get_json(force=True)
+    email = normalize_email(data.get("email"))
+    generic_message = "If that account exists, a reset code has been created."
+    if not email:
+        return jsonify({"error": "Enter the email address for the account."}), 400
+
+    with get_db() as db:
+        user = row_to_dict(
+            db.execute(
+                "SELECT id, disabled FROM users WHERE email = ?",
+                (email,),
+            ).fetchone()
+        )
+        db.execute(
+            "DELETE FROM password_reset_codes WHERE used_at != '' OR expires_at <= ?",
+            (now_iso(),),
+        )
+        if not user or user["disabled"]:
+            db.commit()
+            return jsonify({"ok": True, "message": generic_message})
+
+        code = f"{secrets.randbelow(1000000):06d}"
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(timespec="seconds")
+        db.execute(
+            """
+            INSERT INTO password_reset_codes (user_id, code_hash, expires_at, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (user["id"], generate_password_hash(code), expires_at, now_iso()),
+        )
+        db.commit()
+
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Prototype reset code created. Use it within 15 minutes.",
+            "reset_code": code,
+        }
+    )
+
+
+@app.route("/api/password-reset/confirm", methods=["POST"])
+def api_password_reset_confirm():
+    data = request.get_json(force=True)
+    email = normalize_email(data.get("email"))
+    code = clean_text(data.get("code"), 20)
+    new_password = data.get("new_password") or ""
+
+    if not email or not code or len(new_password) < 8:
+        return jsonify({"error": "Enter your email, reset code, and a new password with at least 8 characters."}), 400
+
+    with get_db() as db:
+        user = row_to_dict(
+            db.execute(
+                "SELECT id FROM users WHERE email = ? AND disabled = 0",
+                (email,),
+            ).fetchone()
+        )
+        if not user:
+            return jsonify({"error": "Reset code is invalid or expired."}), 400
+
+        rows = db.execute(
+            """
+            SELECT id, code_hash
+            FROM password_reset_codes
+            WHERE user_id = ? AND used_at = '' AND expires_at > ?
+            ORDER BY created_at DESC
+            LIMIT 5
+            """,
+            (user["id"], now_iso()),
+        ).fetchall()
+        matched = None
+        for row in rows:
+            if check_password_hash(row["code_hash"], code):
+                matched = row
+                break
+        if not matched:
+            return jsonify({"error": "Reset code is invalid or expired."}), 400
+
+        db.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(new_password), user["id"]),
+        )
+        db.execute(
+            "UPDATE password_reset_codes SET used_at = ? WHERE id = ?",
+            (now_iso(), matched["id"]),
+        )
+        db.commit()
+
+    session.clear()
+    return jsonify({"ok": True, "message": "Password reset. You can sign in with the new password."})
 
 
 @app.route("/api/logout", methods=["POST"])
@@ -707,10 +812,10 @@ def api_dashboard():
         }
 
         if user["role"] == "teacher":
-            payload["pending_users"] = [
+            payload["recent_users"] = [
                 row_to_dict(row)
                 for row in db.execute(
-                    "SELECT id, name, email, role, created_at FROM users WHERE approved = 0 ORDER BY created_at DESC"
+                    "SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC LIMIT 6"
                 )
             ]
             payload["resource_reviews"] = [
@@ -989,7 +1094,7 @@ def api_assignment_save(assignment_id: int):
 def api_resources():
     user = current_user()
     if request.method == "POST":
-        bucket = "resources" if user["role"] == "teacher" else "resource_reviews"
+        bucket = "resources"
         meta = save_upload(request.files.get("file"), bucket, user)
         now = now_iso()
         title = clean_text(request.form.get("title"), 180) or "Untitled resource"
@@ -998,41 +1103,6 @@ def api_resources():
         body = clean_text(request.form.get("body"), 12000)
         url = clean_text(request.form.get("url"), 1000)
         tags = clean_text(request.form.get("tags"), 500)
-
-        if user["role"] != "teacher":
-            review_id = execute_db(
-                """
-                INSERT INTO resource_reviews
-                (title, kind, description, body, url, tags, original_filename, stored_filename,
-                 mime_type, file_size, student_id, status, teacher_comment, reviewed_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', NULL, ?, ?)
-                """,
-                (
-                    title,
-                    kind,
-                    description,
-                    body,
-                    url,
-                    tags,
-                    meta["original_filename"],
-                    meta["stored_filename"],
-                    meta["mime_type"],
-                    meta["file_size"],
-                    user["id"],
-                    now,
-                    now,
-                ),
-            )
-            with get_db() as db:
-                teacher_ids = [
-                    row["id"]
-                    for row in db.execute(
-                        "SELECT id FROM users WHERE role = 'teacher' AND approved = 1 AND disabled = 0"
-                    )
-                ]
-            for teacher_id in teacher_ids:
-                create_notification(teacher_id, f"New student resource upload: {title}.", "#resources")
-            return jsonify({"ok": True, "id": review_id, "review": True})
 
         resource_id = execute_db(
             """
@@ -1053,11 +1123,21 @@ def api_resources():
                 meta["mime_type"],
                 meta["file_size"],
                 user["id"],
-                1 if request.form.get("pinned") == "true" else 0,
+                1 if user["role"] == "teacher" and request.form.get("pinned") == "true" else 0,
                 now,
                 now,
             ),
         )
+        with get_db() as db:
+            recipient_ids = [
+                row["id"]
+                for row in db.execute(
+                    "SELECT id FROM users WHERE id != ? AND approved = 1 AND disabled = 0",
+                    (user["id"],),
+                )
+            ]
+        for recipient_id in recipient_ids:
+            create_notification(recipient_id, f"New shared resource: {title}.", "#resources")
         return jsonify({"ok": True, "id": resource_id})
 
     q = clean_text(request.args.get("q"), 200).lower()
@@ -1393,12 +1473,12 @@ def api_inbox_item(post_id: int):
 def api_submissions():
     user = current_user()
     if request.method == "POST":
-        if user["role"] != "student":
-            return jsonify({"error": "Submissions are for student work."}), 403
         try:
             assignment_id = int(request.form.get("assignment_id") or 0)
         except ValueError:
             return jsonify({"error": "Choose a valid assignment."}), 400
+        visibility = clean_text(request.form.get("visibility"), 20)
+        visibility = "class" if visibility == "class" else "private"
         assignment_title = ""
         if assignment_id:
             with get_db() as db:
@@ -1418,12 +1498,13 @@ def api_submissions():
         submission_id = execute_db(
             """
             INSERT INTO submissions
-            (assignment_id, title, description, text_content, url, original_filename, stored_filename, mime_type,
+            (assignment_id, visibility, title, description, text_content, url, original_filename, stored_filename, mime_type,
              file_size, student_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 assignment_id or None,
+                visibility,
                 clean_text(request.form.get("title"), 180) or assignment_title or "Untitled submission",
                 clean_text(request.form.get("description"), 1200),
                 clean_text(request.form.get("text_content"), 12000),
@@ -1445,13 +1526,13 @@ def api_submissions():
                 )
             ]
         for teacher_id in teacher_ids:
-            create_notification(teacher_id, f"New student submission: {clean_text(request.form.get('title'), 180) or assignment_title or 'Untitled submission'}.", "#submissions")
+            create_notification(teacher_id, f"New submission: {clean_text(request.form.get('title'), 180) or assignment_title or 'Untitled submission'}.", "#submissions")
         return jsonify({"ok": True, "id": submission_id})
 
     where = ""
     params: tuple = ()
     if user["role"] != "teacher":
-        where = "WHERE s.student_id = ?"
+        where = "WHERE s.student_id = ? OR s.visibility = 'class'"
         params = (user["id"],)
     with get_db() as db:
         submissions = [
@@ -1478,18 +1559,19 @@ def api_submission_comments(submission_id: int):
     item = require_submission_access(submission_id)
     user = current_user()
     if request.method == "POST":
-        if user["role"] != "teacher":
-            return jsonify({"error": "Only teachers can comment on submissions."}), 403
+        if item.get("visibility") != "class" and user["role"] != "teacher":
+            return jsonify({"error": "Only teachers can comment on private submissions."}), 403
         data = request.get_json(force=True)
         body = clean_text(data.get("body"), 4000)
         if not body:
             return jsonify({"error": "Comment cannot be blank."}), 400
         execute_db(
-            "INSERT INTO submission_comments (submission_id, teacher_id, body, created_at) VALUES (?, ?, ?, ?)",
-            (submission_id, user["id"], body, now_iso()),
+            "INSERT INTO submission_comments (submission_id, teacher_id, author_id, body, created_at) VALUES (?, ?, ?, ?, ?)",
+            (submission_id, user["id"], user["id"], body, now_iso()),
         )
         execute_db("UPDATE submissions SET updated_at = ? WHERE id = ?", (now_iso(), submission_id))
-        create_notification(item["student_id"], f"New teacher comment on {item['title']}.", "#submissions")
+        if user["id"] != item["student_id"]:
+            create_notification(item["student_id"], f"New comment on {item['title']}.", "#submissions")
         return jsonify({"ok": True})
 
     with get_db() as db:
@@ -1497,9 +1579,9 @@ def api_submission_comments(submission_id: int):
             row_to_dict(row)
             for row in db.execute(
                 """
-                SELECT c.*, u.name AS teacher_name
+                SELECT c.*, u.name AS teacher_name, u.name AS author_name, u.role AS author_role
                 FROM submission_comments c
-                JOIN users u ON u.id = c.teacher_id
+                JOIN users u ON u.id = COALESCE(c.author_id, c.teacher_id)
                 WHERE c.submission_id = ?
                 ORDER BY c.created_at ASC
                 """,
@@ -1807,7 +1889,7 @@ def download_file(bucket: str, item_id: int):
         abort(403)
     if bucket == "resource_reviews" and user["role"] != "teacher" and item["student_id"] != user["id"]:
         abort(403)
-    if bucket == "submissions" and user["role"] != "teacher" and item["student_id"] != user["id"]:
+    if bucket == "submissions" and item.get("visibility") != "class" and user["role"] != "teacher" and item["student_id"] != user["id"]:
         abort(403)
     if bucket == "inbox" and item.get("deleted_at"):
         abort(404)

@@ -117,7 +117,7 @@ function setSignedIn(user) {
   state.user = user;
   $("#auth-view").classList.add("hidden");
   $("#app-view").classList.remove("hidden");
-  $("#user-pill").textContent = `${user.name} · ${user.role}`;
+  $("#user-pill").textContent = `${user.name}  -  ${user.role}`;
   applyRoleVisibility();
 }
 
@@ -157,7 +157,7 @@ function resourceCard(item) {
           <h3>${escapeHtml(item.title)}</h3>
           ${pinned}
         </div>
-        <div class="item-meta">${escapeHtml(item.kind)} · ${escapeHtml(item.uploader_name || "Teacher")} · ${compactDate(item.created_at)}</div>
+        <div class="item-meta">${escapeHtml(item.kind)}  -  ${escapeHtml(item.uploader_name || "Teacher")}  -  ${compactDate(item.created_at)}</div>
       </div>
       <div class="item-body">${escapeHtml(summary).replaceAll("\n", "<br>")}</div>
       ${tagsHtml(item.tags)}
@@ -231,7 +231,7 @@ function resourceReviewCard(item) {
       <div class="item-title-row">
         <div>
           <h3>${escapeHtml(item.title)}</h3>
-          <div class="item-meta">${escapeHtml(item.student_name || "Student")} · ${escapeHtml(item.kind)} · ${compactDate(item.created_at)}</div>
+          <div class="item-meta">${escapeHtml(item.student_name || "Student")}  -  ${escapeHtml(item.kind)}  -  ${compactDate(item.created_at)}</div>
         </div>
         ${statusBadge}
       </div>
@@ -301,7 +301,7 @@ function tinyResource(item) {
     <div class="metric-row">
       <div>
         <strong style="font-size:15px;color:var(--ink)">${escapeHtml(item.title)}</strong>
-        <div class="item-meta">${escapeHtml(item.kind || "resource")} · ${compactDate(item.created_at)}</div>
+        <div class="item-meta">${escapeHtml(item.kind || "resource")}  -  ${compactDate(item.created_at)}</div>
       </div>
       ${item.download_url ? `<a href="${escapeHtml(item.download_url)}">Download</a>` : ""}
     </div>
@@ -313,7 +313,7 @@ function tinyInbox(item) {
     <div class="metric-row">
       <div>
         <strong style="font-size:15px;color:var(--ink)">${escapeHtml(item.title)}</strong>
-        <div class="item-meta">${escapeHtml(item.author_name)} · ${compactDate(item.created_at)}</div>
+        <div class="item-meta">${escapeHtml(item.author_name)}  -  ${compactDate(item.created_at)}</div>
       </div>
     </div>
   `;
@@ -373,23 +373,23 @@ function renderDashboard(data) {
   `;
 
   if (state.user.role === "teacher") {
-    const pending = data.pending_users || [];
+    const people = data.recent_users || [];
     const submissions = data.recent_submissions || [];
     const activity = data.student_activity || [];
     const resourceReviews = data.resource_reviews || [];
     grid.innerHTML = `
       <article class="panel dashboard-card">
-        <h2>Account Requests</h2>
-        <div class="metric-row"><span>Waiting</span><strong>${pending.length}</strong></div>
-        ${pending.slice(0, 4).map((user) => `<div class="item-meta">${escapeHtml(user.name)} · ${escapeHtml(user.role)}</div>`).join("") || `<p class="hint">No pending accounts.</p>`}
+        <h2>People</h2>
+        <div class="metric-row"><span>Recent accounts</span><strong>${people.length}</strong></div>
+        ${people.slice(0, 4).map((user) => `<div class="item-meta">${escapeHtml(user.name)}  -  ${escapeHtml(user.role)}</div>`).join("") || `<p class="hint">No accounts yet.</p>`}
       </article>
       <article class="panel dashboard-card">
-        <h2>Recent Submissions</h2>
+        <h2>Shared Submissions</h2>
         ${dashboardList(submissions, (item) => `
           <button data-open-submission="${item.id}" type="button" style="text-align:left">
-            ${escapeHtml(item.title)}<br><span class="item-meta">${escapeHtml(item.student_name)} · ${item.comment_count} comments</span>
+            ${escapeHtml(item.title)}<br><span class="item-meta">${escapeHtml(item.student_name)}  -  ${item.comment_count} comments</span>
           </button>
-        `, "No student submissions yet.")}
+        `, "No submissions shared yet.")}
       </article>
       <article class="panel dashboard-card">
         <h2>Student Activity</h2>
@@ -405,7 +405,7 @@ function renderDashboard(data) {
         <div class="metric-row"><span>Pending review</span><strong>${resourceReviews.length}</strong></div>
         ${dashboardList(resourceReviews, (item) => `
           <button data-jump="resources" type="button" style="text-align:left">
-            ${escapeHtml(item.title)}<br><span class="item-meta">${escapeHtml(item.student_name)} · ${compactDate(item.created_at)}</span>
+            ${escapeHtml(item.title)}<br><span class="item-meta">${escapeHtml(item.student_name)}  -  ${compactDate(item.created_at)}</span>
           </button>
         `, "No student resource uploads waiting.")}
       </article>
@@ -415,19 +415,19 @@ function renderDashboard(data) {
     const myResourceReviews = data.my_resource_reviews || [];
     grid.innerHTML = `
       <article class="panel dashboard-card">
-        <h2>Latest Teacher Comments</h2>
+        <h2>Latest Feedback</h2>
         ${dashboardList(data.latest_teacher_comments, (comment) => `
           <div class="reply">
-            <div class="item-meta">${escapeHtml(comment.submission_title)} · ${escapeHtml(comment.teacher_name)}</div>
+            <div class="item-meta">${escapeHtml(comment.submission_title)}  -  ${escapeHtml(comment.teacher_name)}</div>
             <p>${escapeHtml(comment.body)}</p>
           </div>
-        `, "Teacher feedback will appear here.")}
+        `, "Feedback will appear here.")}
       </article>
       <article class="panel dashboard-card">
         <h2>My Submissions</h2>
         ${dashboardList(data.my_submissions, (item) => `
           <button data-open-submission="${item.id}" type="button" style="text-align:left">
-            ${escapeHtml(item.title)}<br><span class="item-meta">${item.comment_count} teacher comments</span>
+            ${escapeHtml(item.title)}<br><span class="item-meta">${item.comment_count} comments</span>
           </button>
         `, "Your private submissions will appear here.")}
       </article>
@@ -471,7 +471,7 @@ function inboxPost(post) {
       <div class="item-title-row">
         <div>
           <h3>${escapeHtml(post.title)}</h3>
-          <div class="item-meta">${escapeHtml(post.author_name)} · ${escapeHtml(post.author_role)} · ${compactDate(post.created_at)}</div>
+          <div class="item-meta">${escapeHtml(post.author_name)}  -  ${escapeHtml(post.author_role)}  -  ${compactDate(post.created_at)}</div>
         </div>
         ${post.pinned ? `<span class="badge pinned">Pinned</span>` : ""}
       </div>
@@ -480,7 +480,7 @@ function inboxPost(post) {
       <div class="reply-list">
         ${(post.replies || []).map((reply) => `
           <div class="reply">
-            <div class="item-meta">${escapeHtml(reply.author_name)} · ${compactDate(reply.created_at)}</div>
+            <div class="item-meta">${escapeHtml(reply.author_name)}  -  ${compactDate(reply.created_at)}</div>
             <p>${escapeHtml(reply.body)}</p>
           </div>
         `).join("")}
@@ -501,7 +501,7 @@ async function loadInbox() {
 
 async function loadAssignmentOptions() {
   const select = $("#submission-assignment-select");
-  if (!select || state.user.role !== "student") return;
+  if (!select) return;
   const data = await api("/api/assignments");
   const assignments = data.assignments || [];
   state.assignments = assignments;
@@ -524,11 +524,14 @@ async function loadAssignmentOptions() {
 function submissionCard(item) {
   const detail = item.description || item.text_content || item.url || "No details added.";
   const assignment = item.assignment_title ? `<div class="item-meta">Assignment: ${escapeHtml(item.assignment_title)}</div>` : "";
+  const visibility = item.visibility === "class" ? `<span class="badge pinned">Class shared</span>` : `<span class="badge">Private</span>`;
+  const commentLabel = item.visibility === "class" ? "comments" : "teacher comments";
   return `
     <article class="panel item-card">
       <div>
         <h3>${escapeHtml(item.title)}</h3>
-        <div class="item-meta">${escapeHtml(item.student_name || state.user.name)} · ${compactDate(item.created_at)} · ${item.comment_count || 0} teacher comments</div>
+        <div class="badge-row">${visibility}</div>
+        <div class="item-meta">${escapeHtml(item.student_name || state.user.name)} - ${compactDate(item.created_at)} - ${item.comment_count || 0} ${commentLabel}</div>
       </div>
       ${assignment}
       <div class="item-body">${escapeHtml(detail).replaceAll("\n", "<br>")}</div>
@@ -546,7 +549,7 @@ async function loadSubmissions() {
   state.submissions = data.submissions || [];
   $("#submissions-list").innerHTML = state.submissions.length
     ? state.submissions.map(submissionCard).join("")
-    : emptyState(state.user.role === "teacher" ? "No student submissions yet." : "You have not sent any private submissions yet.");
+    : emptyState("No submissions shared yet.");
 }
 
 async function openSubmission(id) {
@@ -560,24 +563,27 @@ async function openSubmission(id) {
   }
   const data = await api(`/api/submissions/${id}/comments`);
   $("#submission-dialog-title").textContent = item.title;
+  const commentTitle = item.visibility === "class" ? "Class Comments" : "Teacher Comments";
+  const commentEmpty = item.visibility === "class" ? "No comments yet." : "No teacher comments yet.";
   $("#submission-dialog-body").innerHTML = `
-    <div class="item-meta">${escapeHtml(item.student_name || state.user.name)} · ${compactDate(item.created_at)}</div>
+    <div class="badge-row">${item.visibility === "class" ? `<span class="badge pinned">Class shared</span>` : `<span class="badge">Private</span>`}</div>
+    <div class="item-meta">${escapeHtml(item.student_name || state.user.name)} - ${compactDate(item.created_at)}</div>
     ${item.assignment_title ? `<div class="item-meta">Assignment: ${escapeHtml(item.assignment_title)}</div>` : ""}
     <p class="item-body">${escapeHtml(item.description || "").replaceAll("\n", "<br>")}</p>
     ${item.text_content ? `<div class="reply"><strong>Text entry</strong><p>${escapeHtml(item.text_content).replaceAll("\n", "<br>")}</p></div>` : ""}
     ${itemLinks(item)}
     <div class="comment-thread">
-      <h3>Teacher Comments</h3>
+      <h3>${commentTitle}</h3>
       ${(data.comments || []).length ? data.comments.map((comment) => `
         <div class="comment">
-          <div class="item-meta">${escapeHtml(comment.teacher_name)} · ${compactDate(comment.created_at)}</div>
+          <div class="item-meta">${escapeHtml(comment.author_name || comment.teacher_name)} - ${escapeHtml(comment.author_role || "teacher")} - ${compactDate(comment.created_at)}</div>
           <p>${escapeHtml(comment.body)}</p>
         </div>
-      `).join("") : emptyState("No teacher comments yet.")}
+      `).join("") : emptyState(commentEmpty)}
     </div>
-    ${state.user.role === "teacher" ? `
+    ${(state.user.role === "teacher" || item.visibility === "class") ? `
       <form id="teacher-comment-form" class="stacked" data-submission="${item.id}">
-        <label>New teacher comment
+        <label>New comment
           <textarea name="body" rows="4" required></textarea>
         </label>
         <button class="primary" type="submit">Add comment</button>
@@ -593,7 +599,7 @@ function teacherRoomCard(item) {
       <div class="item-title-row">
         <div>
           <h3>${escapeHtml(item.title)}</h3>
-          <div class="item-meta">${escapeHtml(item.kind)} · ${escapeHtml(item.uploader_name)} · ${compactDate(item.created_at)}</div>
+          <div class="item-meta">${escapeHtml(item.kind)}  -  ${escapeHtml(item.uploader_name)}  -  ${compactDate(item.created_at)}</div>
         </div>
         ${item.pinned ? `<span class="badge pinned">Pinned</span>` : ""}
       </div>
@@ -633,7 +639,7 @@ async function loadPeople() {
   `).join("");
   $("#people-list").innerHTML = `
     <table>
-      <thead><tr><th>User</th><th>Role</th><th>Approval</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+      <thead><tr><th>User</th><th>Role</th><th>Access</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
@@ -673,7 +679,7 @@ async function loadNotifications() {
   $("#notifications-list").innerHTML = data.notifications?.length
     ? data.notifications.map((note) => `
       <div class="reply">
-        <div class="item-meta">${note.read_at ? "Read" : "Unread"} · ${compactDate(note.created_at)}</div>
+        <div class="item-meta">${note.read_at ? "Read" : "Unread"}  -  ${compactDate(note.created_at)}</div>
         <p>${escapeHtml(note.message)}</p>
       </div>
     `).join("")
@@ -755,7 +761,7 @@ async function init() {
     const form = event.currentTarget;
     try {
       const data = await api("/api/register", { method: "POST", body: JSON.stringify(formToJson(form)) });
-      toast(data.message || "Account requested.");
+      toast(data.message || "Account created.");
       form.reset();
     } catch (error) {
       toast(error.message, "error");
@@ -778,6 +784,62 @@ async function init() {
     nameInput.focus();
   });
 
+  $("#forgot-password-button").addEventListener("click", () => {
+    $("#password-reset-request-form").reset();
+    $("#password-reset-confirm-form").reset();
+    $("#password-reset-code-panel").classList.add("hidden");
+    $("#password-reset-dialog").showModal();
+    $("#password-reset-request-form input[name=\"email\"]").focus();
+  });
+
+  $("#close-password-reset-dialog").addEventListener("click", () => $("#password-reset-dialog").close());
+
+  $("#password-reset-request-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = $("button[type=\"submit\"]", form);
+    button.disabled = true;
+    try {
+      const data = await api("/api/password-reset/request", {
+        method: "POST",
+        body: JSON.stringify(formToJson(form)),
+      });
+      const email = form.email.value;
+      $("#password-reset-confirm-form input[name=\"email\"]").value = email;
+      $("#password-reset-code").textContent = data.reset_code
+        ? `${data.reset_code} expires in 15 minutes.`
+        : data.message;
+      $("#password-reset-code-panel").classList.remove("hidden");
+      toast(data.message || "Reset code created.");
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $("#password-reset-confirm-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = $("button[type=\"submit\"]", form);
+    button.disabled = true;
+    try {
+      const data = await api("/api/password-reset/confirm", {
+        method: "POST",
+        body: JSON.stringify(formToJson(form)),
+      });
+      toast(data.message || "Password reset.");
+      form.reset();
+      $("#password-reset-request-form").reset();
+      $("#password-reset-code-panel").classList.add("hidden");
+      $("#password-reset-dialog").close();
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   $("#top-signup-button").addEventListener("click", () => {
     $("#signup-dialog").showModal();
     $("#top-signup-form input[name=\"name\"]").focus();
@@ -787,7 +849,7 @@ async function init() {
 
   $("#account-button").addEventListener("click", () => {
     $("#account-name").textContent = state.user?.name || "Account";
-    $("#account-email").textContent = `${state.user?.email || ""} · ${state.user?.role || ""}`;
+    $("#account-email").textContent = `${state.user?.email || ""}  -  ${state.user?.role || ""}`;
     $("#account-dialog").showModal();
   });
 
@@ -800,7 +862,7 @@ async function init() {
     button.disabled = true;
     try {
       const data = await api("/api/register", { method: "POST", body: JSON.stringify(formToJson(form)) });
-      toast(data.message || "Account requested.");
+      toast(data.message || "Account created.");
       form.reset();
       $("#signup-dialog").close();
       if (state.user?.role === "teacher" && state.section === "people") {
@@ -846,7 +908,7 @@ async function init() {
     submitMultipart(
       event.currentTarget,
       "/api/resources",
-      state.user?.role === "teacher" ? "Resource published." : "Resource sent to teachers for review."
+      "Resource shared with the class."
     );
   });
 
@@ -887,7 +949,7 @@ async function init() {
 
   $("#submission-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    submitMultipart(event.currentTarget, "/api/submissions", "Submission sent to teachers.");
+    submitMultipart(event.currentTarget, "/api/submissions", "Submission shared.");
   });
 
   $("#teacher-room-form").addEventListener("submit", (event) => {
@@ -962,7 +1024,7 @@ async function init() {
           method: "POST",
           body: JSON.stringify({ body }),
         });
-        toast("Teacher comment added.");
+        toast("Comment added.");
         $("#submission-dialog").close();
         await loadSubmissions();
         await openSubmission(commentForm.dataset.submission);

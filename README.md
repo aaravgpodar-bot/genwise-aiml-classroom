@@ -2,15 +2,15 @@
 
 GenWise AI/ML Classroom is a classroom portal for AI/ML learning. It includes:
 
-- Email/password accounts with teacher approval
+- Email/password accounts with instant student/teacher access
 - Student and teacher role selection at signup
-- Teacher-posted resources
-- Student resource uploads for teacher review
+- Teacher and student shared resources
 - Shared classroom inbox
-- Private student submissions with teacher comments
+- Private or class-shared submissions with teacher/class comments
 - Teacher-only room
 - Saved resources
 - Local research assistant that searches classroom resources
+- Prototype forgot-password reset codes
 
 ## Run Locally
 
@@ -25,9 +25,11 @@ Open:
 http://127.0.0.1:8777
 ```
 
-## First Teacher Account
+## Accounts
 
-On a fresh database, the first person to sign up becomes the first approved teacher automatically. Everyone after that waits for teacher approval.
+Students and teachers can sign up and enter the classroom right away. Teachers can still change roles, disable accounts, or clean up test accounts from the People view.
+
+Forgot-password uses a prototype reset code shown in the app. For a real public classroom, connect an email provider such as Resend or Supabase Auth email before relying on password reset in production.
 
 ## Deployment
 
