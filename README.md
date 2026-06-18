@@ -52,7 +52,14 @@ The app currently runs without Supabase. It uses:
 - Local upload folders under `GENWISE_DATA_DIR`
 - Flask sessions for login
 
-This is fine for the camp prototype as long as the deployed host keeps `GENWISE_DATA_DIR` persistent. When Supabase credentials are available, the main migration targets are the database tables first, then file storage if the instructor wants Supabase Storage too.
+This is fine for the camp prototype as long as the deployed host keeps `GENWISE_DATA_DIR` persistent.
+
+Supabase is now partially wired in:
+
+- `.env` is loaded automatically when the Flask app starts
+- `/api/supabase/status` checks the configured Supabase project and storage bucket
+- file uploads are saved locally first, then mirrored to Supabase Storage when bucket policies allow the anon key to upload
+- the main app database still uses SQLite until a database password, direct connection string, or service-role key is provided for a safe migration
 
 ## Supabase Variables
 
@@ -66,6 +73,14 @@ SUPABASE_ANON_KEY
 SUPABASE_PROJECT_REF
 SUPABASE_STORAGE_BUCKET
 APP_SLUGS
+```
+
+Optional values needed for a full Supabase database migration:
+
+```text
+SUPABASE_DB_URL
+SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_DB_PASSWORD
 ```
 
 If a frontend build later uses Vite directly, mirror the public values with:

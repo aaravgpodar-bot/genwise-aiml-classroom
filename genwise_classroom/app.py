@@ -23,11 +23,20 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+try:
+    from .supabase_integration import SupabaseClient, SupabaseConfig, load_dotenv
+except ImportError:
+    from supabase_integration import SupabaseClient, SupabaseConfig, load_dotenv
+
 
 ROOT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = ROOT_DIR.parent
+load_dotenv(PROJECT_DIR / ".env")
 DATA_DIR = Path(os.getenv("GENWISE_DATA_DIR", str(ROOT_DIR / "instance")))
 UPLOAD_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "genwise.db"
+SUPABASE_CONFIG = SupabaseConfig.from_env()
+SUPABASE_CLIENT = SupabaseClient(SUPABASE_CONFIG)
 
 STUDENT_UPLOAD_LIMIT = 200 * 1024 * 1024
 TEACHER_UPLOAD_LIMIT = 600 * 1024 * 1024
@@ -409,6 +418,14 @@ def save_upload(file, bucket: str, user: dict) -> dict:
     if size > upload_limit_for(user):
         path.unlink(missing_ok=True)
         abort(413, description="This upload is larger than the allowed limit for your role.")
+
+    if SUPABASE_CONFIG.configured:
+        object_name = f"{bucket}/{stored}"
+        result = SUPABASE_CLIENT.upload_file(path, object_name, file.mimetype or "application/octet-stream")
+        if result.get("ok"):
+            app.logger.info("Mirrored upload to Supabase Storage: %s", object_name)
+        else:
+            app.logger.warning("Supabase Storage mirror failed for %s: %s", object_name, result.get("message"))
 
     return {
         "original_filename": original,
@@ -1576,6 +1593,15 @@ def api_notifications():
     return jsonify({"notifications": [row_to_dict(row) for row in rows]})
 
 
+@app.route("/api/supabase/status")
+def api_supabase_status():
+    status = SUPABASE_CONFIG.public_status()
+    status["storage"] = SUPABASE_CLIENT.storage_status()
+    status["database_mode"] = "sqlite"
+    status["database_note"] = "Supabase database needs a DB password or service role key before migration."
+    return jsonify(status)
+
+
 @app.route("/api/ai/profile", methods=["GET", "POST"])
 @login_required
 def api_ai_profile():
@@ -1800,7 +1826,14 @@ def download_file(bucket: str, item_id: int):
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "app": "GenWise AI/ML Classroom"})
+    return jsonify(
+        {
+            "ok": True,
+            "app": "GenWise AI/ML Classroom",
+            "supabase_configured": SUPABASE_CONFIG.configured,
+            "database_mode": "sqlite",
+        }
+    )
 
 
 init_db()
