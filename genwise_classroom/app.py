@@ -4,6 +4,8 @@ import secrets
 import shutil
 import sqlite3
 import uuid
+import pg8000
+import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -93,15 +95,152 @@ def ensure_dirs() -> None:
 app.config["SECRET_KEY"] = load_secret_key()
 
 
+class PostgresRow:
+    def __init__(self, cursor_wrapper, row_data):
+        self._keys = [col[0] for col in cursor_wrapper.cursor.description]
+        self._data = row_data
+        self._dict = dict(zip(self._keys, row_data))
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._data[key]
+        return self._dict[key]
+
+    def keys(self):
+        return self._keys
+
+class PostgresCursorWrapper:
+    def __init__(self, cursor):
+        self.cursor = cursor
+        self._lastrowid = None
+
+    def execute(self, sql, params=()):
+        sql = sql.replace("?", "%s")
+        if "PRAGMA table_info" in sql:
+            match = re.search(r"PRAGMA table_info\((\w+)\)", sql)
+            if match:
+                table_name = match.group(1).lower()
+                postgres_sql = """
+                    SELECT column_name AS name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'aarav' AND table_name = %s;
+                """
+                self.cursor.execute(postgres_sql, (table_name,))
+                return self
+        
+        is_insert = sql.strip().upper().startswith("INSERT")
+        if is_insert and "RETURNING" not in sql.upper():
+            sql_stripped = sql.strip().rstrip(";")
+            sql = sql_stripped + " RETURNING id;"
+        
+        try:
+            self.cursor.execute(sql, params)
+        except pg8000.exceptions.DatabaseError as e:
+            err_msg = str(e)
+            if any(code in err_msg for code in ["23505", "23503", "23514"]):
+                raise sqlite3.IntegrityError(err_msg)
+            raise e
+        
+        if is_insert:
+            try:
+                res = self.cursor.fetchone()
+                if res:
+                    self._lastrowid = res[0]
+            except Exception:
+                pass
+        return self
+
+    @property
+    def lastrowid(self):
+        return self._lastrowid
+
+    def fetchone(self):
+        row = self.cursor.fetchone()
+        if row is None:
+            return None
+        return PostgresRow(self, row)
+
+    def fetchall(self):
+        rows = self.cursor.fetchall()
+        return [PostgresRow(self, r) for r in rows]
+
+    def __iter__(self):
+        while True:
+            row = self.fetchone()
+            if row is None:
+                break
+            yield row
+
+    def close(self):
+        self.cursor.close()
+
+class PostgresConnectionWrapper:
+    def __init__(self, pg_conn):
+        self.conn = pg_conn
+
+    def cursor(self):
+        return PostgresCursorWrapper(self.conn.cursor())
+
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        self.conn.close()
+
+    def execute(self, sql, params=()):
+        cursor = self.cursor()
+        cursor.execute(sql, params)
+        return cursor
+
+    def executescript(self, script_sql):
+        statements = script_sql.split(";")
+        cursor = self.cursor()
+        for statement in statements:
+            stmt = statement.strip()
+            if not stmt:
+                continue
+            stmt = stmt.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+            cursor.execute(stmt)
+        self.commit()
+
+
 @contextmanager
 def get_db():
-    ensure_dirs()
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
-    try:
-        yield db
-    finally:
-        db.close()
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        import urllib.parse
+        parsed = urllib.parse.urlparse(db_url)
+        conn = pg8000.connect(
+            user=parsed.username,
+            password=parsed.password,
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            database=parsed.path.lstrip('/')
+        )
+        cursor = conn.cursor()
+        cursor.execute("SET search_path TO aarav;")
+        conn.commit()
+        cursor.close()
+        
+        wrapper = PostgresConnectionWrapper(conn)
+        try:
+            yield wrapper
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+    else:
+        ensure_dirs()
+        db = sqlite3.connect(DB_PATH)
+        db.row_factory = sqlite3.Row
+        try:
+            yield db
+        finally:
+            db.close()
 
 
 def row_to_dict(row: sqlite3.Row | None) -> dict | None:
@@ -437,7 +576,8 @@ def save_upload(file, bucket: str, user: dict) -> dict:
         abort(413, description="This upload is larger than the allowed limit for your role.")
 
     if SUPABASE_CONFIG.configured:
-        object_name = f"{bucket}/{stored}"
+        slug = SUPABASE_CONFIG.app_slugs[0] if SUPABASE_CONFIG.app_slugs else "aarav-genwise-aiml-classroom"
+        object_name = f"{slug}/{bucket}/{stored}"
         result = SUPABASE_CLIENT.upload_file(path, object_name, file.mimetype or "application/octet-stream")
         if result.get("ok"):
             app.logger.info("Mirrored upload to Supabase Storage: %s", object_name)
@@ -1679,8 +1819,8 @@ def api_notifications():
 def api_supabase_status():
     status = SUPABASE_CONFIG.public_status()
     status["storage"] = SUPABASE_CLIENT.storage_status()
-    status["database_mode"] = "sqlite"
-    status["database_note"] = "Supabase database needs a DB password or service role key before migration."
+    status["database_mode"] = "postgres" if os.getenv("DATABASE_URL") else "sqlite"
+    status["database_note"] = "Supabase PostgreSQL database is connected and active in the aarav schema." if os.getenv("DATABASE_URL") else "Supabase database needs a DB password or service role key before migration."
     return jsonify(status)
 
 
@@ -1896,6 +2036,10 @@ def download_file(bucket: str, item_id: int):
 
     path = UPLOAD_DIR / bucket / item["stored_filename"]
     if not path.exists():
+        if SUPABASE_CONFIG.configured:
+            slug = SUPABASE_CONFIG.app_slugs[0] if SUPABASE_CONFIG.app_slugs else "aarav-genwise-aiml-classroom"
+            supabase_url = f"{SUPABASE_CONFIG.url}/storage/v1/object/public/{SUPABASE_CONFIG.storage_bucket}/{slug}/{bucket}/{item['stored_filename']}"
+            return redirect(supabase_url)
         abort(404)
     inline = request.args.get("inline") == "1" and can_preview(item)
     return send_file(
