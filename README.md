@@ -54,6 +54,33 @@ The app currently runs without Supabase. It uses:
 
 This is fine for the camp prototype as long as the deployed host keeps `GENWISE_DATA_DIR` persistent. When Supabase credentials are available, the main migration targets are the database tables first, then file storage if the instructor wants Supabase Storage too.
 
+## Supabase Variables
+
+Keep real Supabase values in `.env`; that file is intentionally ignored by Git. Use `.env.example` as the safe template for deployment setup.
+
+Required values from the instructor:
+
+```text
+SUPABASE_URL
+SUPABASE_ANON_KEY
+SUPABASE_PROJECT_REF
+SUPABASE_STORAGE_BUCKET
+APP_SLUGS
+```
+
+If a frontend build later uses Vite directly, mirror the public values with:
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+```
+
+Multiple app slugs should be stored as one comma-separated value:
+
+```text
+APP_SLUGS=akshaan-class-resource-hub,parnika-class-resource-hub,sohum-code-the-future-dashboard,prayan-genwise-camp,aara
+```
+
 ## Permanent Free URL Options
 
 For this Flask app, the most practical free permanent URL is PythonAnywhere's free web app subdomain:
