@@ -85,6 +85,7 @@
 
       <nav class="nav-list">
         <button class="nav-button active" data-section="dashboard">Dashboard</button>
+        <button class="nav-button" data-section="assignments">Assignments</button>
         <button class="nav-button" data-section="resources">Resources</button>
         <button class="nav-button" data-section="inbox">Inbox</button>
         <button class="nav-button" data-section="submissions">Submissions</button>
@@ -114,6 +115,44 @@
 
       <section id="dashboard" class="view active-view">
         <div id="dashboard-grid" class="dashboard-grid"></div>
+      </section>
+
+      <section id="assignments" class="view">
+        <div class="section-tools">
+          <div class="search-box">
+            <input id="assignment-search" type="search" placeholder="Search assignments, instructions, links">
+            <button id="assignment-search-button" type="button">Search</button>
+          </div>
+        </div>
+
+        <form id="assignment-form" class="panel form-grid teacher-only" enctype="multipart/form-data">
+          <div class="panel-heading full-span">
+            <h2>Post Assignment</h2>
+            <span>Visible to students</span>
+          </div>
+          <label>Title
+            <input name="title" type="text" required>
+          </label>
+          <label>Due date
+            <input name="due_at" type="datetime-local">
+          </label>
+          <label class="full-span">Instructions
+            <textarea name="instructions" rows="5"></textarea>
+          </label>
+          <label>Link
+            <input name="url" type="url" placeholder="https://">
+          </label>
+          <label>Attachment
+            <input name="file" type="file">
+          </label>
+          <label class="check-line">
+            <input name="pinned" value="true" type="checkbox">
+            Pin assignment
+          </label>
+          <button class="primary full-span" type="submit">Post assignment</button>
+        </form>
+
+        <div id="assignments-list" class="item-grid"></div>
       </section>
 
       <section id="resources" class="view">
@@ -190,6 +229,11 @@
           </div>
           <label>Title
             <input name="title" type="text" required>
+          </label>
+          <label>Assignment
+            <select id="submission-assignment-select" name="assignment_id">
+              <option value="">No assignment</option>
+            </select>
           </label>
           <label>Link
             <input name="url" type="url" placeholder="https://">

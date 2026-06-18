@@ -77,7 +77,7 @@ def now_iso() -> str:
 
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(exist_ok=True)
-    for bucket in ("resources", "resource_reviews", "submissions", "inbox", "teacher_room"):
+    for bucket in ("resources", "resource_reviews", "assignments", "submissions", "inbox", "teacher_room"):
         (UPLOAD_DIR / bucket).mkdir(parents=True, exist_ok=True)
 
 
@@ -151,6 +151,34 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (uploaded_by) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                instructions TEXT NOT NULL DEFAULT '',
+                url TEXT NOT NULL DEFAULT '',
+                due_at TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open',
+                original_filename TEXT NOT NULL DEFAULT '',
+                stored_filename TEXT NOT NULL DEFAULT '',
+                mime_type TEXT NOT NULL DEFAULT '',
+                file_size INTEGER NOT NULL DEFAULT 0,
+                created_by INTEGER NOT NULL,
+                pinned INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS assignment_saves (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                assignment_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, assignment_id),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (assignment_id) REFERENCES assignments(id)
             );
 
             CREATE TABLE IF NOT EXISTS resource_reviews (
@@ -231,8 +259,19 @@ def init_db() -> None:
                 FOREIGN KEY (author_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS inbox_saves (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                post_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, post_id),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (post_id) REFERENCES inbox_posts(id)
+            );
+
             CREATE TABLE IF NOT EXISTS submissions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                assignment_id INTEGER,
                 title TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 text_content TEXT NOT NULL DEFAULT '',
@@ -244,6 +283,7 @@ def init_db() -> None:
                 student_id INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
+                FOREIGN KEY (assignment_id) REFERENCES assignments(id),
                 FOREIGN KEY (student_id) REFERENCES users(id)
             );
 
@@ -278,6 +318,9 @@ def init_db() -> None:
             );
             """
         )
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(submissions)").fetchall()}
+        if "assignment_id" not in columns:
+            db.execute("ALTER TABLE submissions ADD COLUMN assignment_id INTEGER REFERENCES assignments(id)")
         db.commit()
 
 
@@ -292,6 +335,14 @@ def current_user() -> dict | None:
         session.clear()
         return None
     return user
+
+
+def public_user(user: dict | None) -> dict | None:
+    if not user:
+        return None
+    safe = dict(user)
+    safe.pop("password_hash", None)
+    return safe
 
 
 def login_required(fn):
@@ -398,9 +449,10 @@ def require_submission_access(submission_id: int) -> dict:
     with get_db() as db:
         row = db.execute(
             """
-            SELECT s.*, u.name AS student_name
+            SELECT s.*, u.name AS student_name, a.title AS assignment_title
             FROM submissions s
             JOIN users u ON u.id = s.student_id
+            LEFT JOIN assignments a ON a.id = s.assignment_id
             WHERE s.id = ?
             """,
             (submission_id,),
@@ -434,7 +486,7 @@ def index():
 @app.route("/api/me")
 def api_me():
     user = current_user()
-    return jsonify({"user": user})
+    return jsonify({"user": public_user(user)})
 
 
 @app.route("/api/register", methods=["POST"])
@@ -487,7 +539,7 @@ def api_login():
     if not user["approved"]:
         return jsonify({"error": "This account is waiting for teacher approval."}), 403
     session["user_id"] = user["id"]
-    return jsonify({"ok": True, "user": user})
+    return jsonify({"ok": True, "user": public_user(user)})
 
 
 @app.route("/api/logout", methods=["POST"])
@@ -552,6 +604,27 @@ def api_dashboard():
                 """
             )
         ]
+        recent_assignments = [
+            with_file_links(row_to_dict(row), "assignments")
+            for row in db.execute(
+                """
+                SELECT a.*, u.name AS creator_name,
+                       EXISTS(SELECT 1 FROM assignment_saves s WHERE s.assignment_id = a.id AND s.user_id = ?) AS saved,
+                       (SELECT COUNT(*) FROM submissions sub WHERE sub.assignment_id = a.id) AS submission_count,
+                       (SELECT COUNT(*) FROM submissions sub WHERE sub.assignment_id = a.id AND sub.student_id = ?) AS my_submission_count
+                FROM assignments a
+                JOIN users u ON u.id = a.created_by
+                WHERE a.status != 'archived'
+                ORDER BY a.pinned DESC,
+                         CASE a.status WHEN 'open' THEN 0 ELSE 1 END,
+                         CASE WHEN a.due_at = '' THEN 1 ELSE 0 END,
+                         a.due_at ASC,
+                         a.created_at DESC
+                LIMIT 5
+                """,
+                (user["id"], user["id"]),
+            )
+        ]
         saved_resources = [
             with_file_links(row_to_dict(row), "resources")
             for row in db.execute(
@@ -567,6 +640,23 @@ def api_dashboard():
                 (user["id"],),
             )
         ]
+        saved_assignments = [
+            with_file_links(row_to_dict(row), "assignments")
+            for row in db.execute(
+                """
+                SELECT a.*, u.name AS creator_name, 1 AS saved,
+                       (SELECT COUNT(*) FROM submissions sub WHERE sub.assignment_id = a.id) AS submission_count,
+                       (SELECT COUNT(*) FROM submissions sub WHERE sub.assignment_id = a.id AND sub.student_id = ?) AS my_submission_count
+                FROM assignment_saves s
+                JOIN assignments a ON a.id = s.assignment_id
+                JOIN users u ON u.id = a.created_by
+                WHERE s.user_id = ? AND a.status != 'archived'
+                ORDER BY s.created_at DESC
+                LIMIT 5
+                """,
+                (user["id"], user["id"]),
+            )
+        ]
         unread_notifications = db.execute(
             "SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND read_at = ''",
             (user["id"],),
@@ -575,7 +665,9 @@ def api_dashboard():
         payload = {
             "recent_resources": recent_resources,
             "recent_inbox": recent_inbox,
+            "recent_assignments": recent_assignments,
             "saved_resources": saved_resources,
+            "saved_assignments": saved_assignments,
             "unread_notifications": unread_notifications,
         }
 
@@ -603,10 +695,11 @@ def api_dashboard():
                 with_file_links(row_to_dict(row), "submissions")
                 for row in db.execute(
                     """
-                    SELECT s.*, u.name AS student_name,
+                    SELECT s.*, u.name AS student_name, a.title AS assignment_title,
                            (SELECT COUNT(*) FROM submission_comments c WHERE c.submission_id = s.id) AS comment_count
                     FROM submissions s
                     JOIN users u ON u.id = s.student_id
+                    LEFT JOIN assignments a ON a.id = s.assignment_id
                     ORDER BY s.updated_at DESC
                     LIMIT 6
                     """
@@ -660,10 +753,11 @@ def api_dashboard():
                 with_file_links(row_to_dict(row), "submissions")
                 for row in db.execute(
                     """
-                    SELECT s.*, u.name AS student_name,
+                    SELECT s.*, u.name AS student_name, a.title AS assignment_title,
                            (SELECT COUNT(*) FROM submission_comments c WHERE c.submission_id = s.id) AS comment_count
                     FROM submissions s
                     JOIN users u ON u.id = s.student_id
+                    LEFT JOIN assignments a ON a.id = s.assignment_id
                     WHERE s.student_id = ?
                     ORDER BY s.updated_at DESC
                     LIMIT 5
@@ -714,6 +808,144 @@ def api_update_user(user_id: int):
         db.commit()
     if approved and not target["approved"]:
         create_notification(user_id, "Your GenWise AI/ML Classroom account was approved.")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/assignments", methods=["GET", "POST"])
+@login_required
+def api_assignments():
+    user = current_user()
+    if request.method == "POST":
+        if user["role"] != "teacher":
+            return jsonify({"error": "Only teachers can create assignments."}), 403
+        meta = save_upload(request.files.get("file"), "assignments", user)
+        now = now_iso()
+        title = clean_text(request.form.get("title"), 180) or "Untitled assignment"
+        assignment_id = execute_db(
+            """
+            INSERT INTO assignments
+            (title, instructions, url, due_at, status, original_filename, stored_filename,
+             mime_type, file_size, created_by, pinned, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                title,
+                clean_text(request.form.get("instructions"), 12000),
+                clean_text(request.form.get("url"), 1000),
+                clean_text(request.form.get("due_at"), 120),
+                meta["original_filename"],
+                meta["stored_filename"],
+                meta["mime_type"],
+                meta["file_size"],
+                user["id"],
+                1 if request.form.get("pinned") == "true" else 0,
+                now,
+                now,
+            ),
+        )
+        with get_db() as db:
+            student_ids = [
+                row["id"]
+                for row in db.execute(
+                    "SELECT id FROM users WHERE role = 'student' AND approved = 1 AND disabled = 0"
+                )
+            ]
+        for student_id in student_ids:
+            create_notification(student_id, f"New assignment posted: {title}.", "#assignments")
+        return jsonify({"ok": True, "id": assignment_id})
+
+    q = clean_text(request.args.get("q"), 200).lower()
+    saved_only = request.args.get("saved") == "1"
+    params: list = [user["id"], user["id"]]
+    where = ["a.status != 'archived'"]
+    if q:
+        like = f"%{q}%"
+        where.append("(LOWER(a.title) LIKE ? OR LOWER(a.instructions) LIKE ? OR LOWER(a.url) LIKE ?)")
+        params.extend([like, like, like])
+    if saved_only:
+        where.append("EXISTS(SELECT 1 FROM assignment_saves ss WHERE ss.assignment_id = a.id AND ss.user_id = ?)")
+        params.append(user["id"])
+    where_sql = "WHERE " + " AND ".join(where)
+    with get_db() as db:
+        rows = db.execute(
+            f"""
+            SELECT a.*, u.name AS creator_name,
+                   EXISTS(SELECT 1 FROM assignment_saves s WHERE s.assignment_id = a.id AND s.user_id = ?) AS saved,
+                   (SELECT COUNT(*) FROM submissions sub WHERE sub.assignment_id = a.id) AS submission_count,
+                   (SELECT COUNT(*) FROM submissions sub WHERE sub.assignment_id = a.id AND sub.student_id = ?) AS my_submission_count
+            FROM assignments a
+            JOIN users u ON u.id = a.created_by
+            {where_sql}
+            ORDER BY a.pinned DESC,
+                     CASE a.status WHEN 'open' THEN 0 ELSE 1 END,
+                     CASE WHEN a.due_at = '' THEN 1 ELSE 0 END,
+                     a.due_at ASC,
+                     a.created_at DESC
+            """,
+            tuple(params),
+        ).fetchall()
+    return jsonify({"assignments": [with_file_links(row_to_dict(row), "assignments") for row in rows]})
+
+
+@app.route("/api/assignments/<int:assignment_id>", methods=["PATCH", "DELETE"])
+@teacher_required
+def api_assignment_item(assignment_id: int):
+    with get_db() as db:
+        assignment = row_to_dict(db.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone())
+    if not assignment or assignment["status"] == "archived":
+        return jsonify({"error": "Assignment not found."}), 404
+
+    if request.method == "DELETE":
+        execute_db(
+            "UPDATE assignments SET status = 'archived', updated_at = ? WHERE id = ?",
+            (now_iso(), assignment_id),
+        )
+        return jsonify({"ok": True})
+
+    data = request.get_json(force=True)
+    status = clean_text(data.get("status", assignment["status"]), 40)
+    if status not in {"open", "closed", "archived"}:
+        return jsonify({"error": "Assignment status must be open, closed, or archived."}), 400
+    execute_db(
+        """
+        UPDATE assignments
+        SET title = ?, instructions = ?, url = ?, due_at = ?, status = ?, pinned = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            clean_text(data.get("title", assignment["title"]), 180) or assignment["title"],
+            clean_text(data.get("instructions", assignment["instructions"]), 12000),
+            clean_text(data.get("url", assignment["url"]), 1000),
+            clean_text(data.get("due_at", assignment["due_at"]), 120),
+            status,
+            1 if data.get("pinned", assignment["pinned"]) else 0,
+            now_iso(),
+            assignment_id,
+        ),
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/assignments/<int:assignment_id>/save", methods=["POST", "DELETE"])
+@login_required
+def api_assignment_save(assignment_id: int):
+    user = current_user()
+    with get_db() as db:
+        assignment = row_to_dict(
+            db.execute("SELECT id FROM assignments WHERE id = ? AND status != 'archived'", (assignment_id,)).fetchone()
+        )
+    if not assignment:
+        return jsonify({"error": "Assignment not found."}), 404
+    if request.method == "POST":
+        try:
+            execute_db(
+                "INSERT INTO assignment_saves (user_id, assignment_id, created_at) VALUES (?, ?, ?)",
+                (user["id"], assignment_id, now_iso()),
+            )
+        except sqlite3.IntegrityError:
+            pass
+    else:
+        execute_db("DELETE FROM assignment_saves WHERE user_id = ? AND assignment_id = ?", (user["id"], assignment_id))
     return jsonify({"ok": True})
 
 
@@ -1096,17 +1328,36 @@ def api_submissions():
     if request.method == "POST":
         if user["role"] != "student":
             return jsonify({"error": "Submissions are for student work."}), 403
+        try:
+            assignment_id = int(request.form.get("assignment_id") or 0)
+        except ValueError:
+            return jsonify({"error": "Choose a valid assignment."}), 400
+        assignment_title = ""
+        if assignment_id:
+            with get_db() as db:
+                assignment = row_to_dict(
+                    db.execute(
+                        "SELECT id, title, status FROM assignments WHERE id = ? AND status != 'archived'",
+                        (assignment_id,),
+                    ).fetchone()
+                )
+            if not assignment:
+                return jsonify({"error": "Assignment not found."}), 404
+            if assignment["status"] != "open":
+                return jsonify({"error": "This assignment is closed."}), 400
+            assignment_title = assignment["title"]
         meta = save_upload(request.files.get("file"), "submissions", user)
         now = now_iso()
         submission_id = execute_db(
             """
             INSERT INTO submissions
-            (title, description, text_content, url, original_filename, stored_filename, mime_type,
+            (assignment_id, title, description, text_content, url, original_filename, stored_filename, mime_type,
              file_size, student_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                clean_text(request.form.get("title"), 180) or "Untitled submission",
+                assignment_id or None,
+                clean_text(request.form.get("title"), 180) or assignment_title or "Untitled submission",
                 clean_text(request.form.get("description"), 1200),
                 clean_text(request.form.get("text_content"), 12000),
                 clean_text(request.form.get("url"), 1000),
@@ -1119,6 +1370,15 @@ def api_submissions():
                 now,
             ),
         )
+        with get_db() as db:
+            teacher_ids = [
+                row["id"]
+                for row in db.execute(
+                    "SELECT id FROM users WHERE role = 'teacher' AND approved = 1 AND disabled = 0"
+                )
+            ]
+        for teacher_id in teacher_ids:
+            create_notification(teacher_id, f"New student submission: {clean_text(request.form.get('title'), 180) or assignment_title or 'Untitled submission'}.", "#submissions")
         return jsonify({"ok": True, "id": submission_id})
 
     where = ""
@@ -1131,10 +1391,11 @@ def api_submissions():
             with_file_links(row_to_dict(row), "submissions")
             for row in db.execute(
                 f"""
-                SELECT s.*, u.name AS student_name,
+                SELECT s.*, u.name AS student_name, a.title AS assignment_title,
                        (SELECT COUNT(*) FROM submission_comments c WHERE c.submission_id = s.id) AS comment_count
                 FROM submissions s
                 JOIN users u ON u.id = s.student_id
+                LEFT JOIN assignments a ON a.id = s.assignment_id
                 {where}
                 ORDER BY s.updated_at DESC
                 """,
@@ -1452,6 +1713,7 @@ def download_file(bucket: str, item_id: int):
     table_by_bucket = {
         "resources": "resources",
         "resource_reviews": "resource_reviews",
+        "assignments": "assignments",
         "submissions": "submissions",
         "inbox": "inbox_posts",
         "teacher_room": "teacher_room_items",

@@ -2,11 +2,14 @@ const state = {
   user: null,
   section: "dashboard",
   resourceView: localStorage.getItem("genwise-resource-view") || "cards",
+  assignments: [],
   submissions: [],
+  pendingAssignmentId: "",
 };
 
 const titles = {
   dashboard: "Dashboard",
+  assignments: "Assignments",
   resources: "Resources",
   inbox: "Inbox",
   submissions: "Submissions",
@@ -57,6 +60,13 @@ function compactDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function dueDate(value) {
+  if (!value) return "No due date";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `Due ${date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function fileSize(bytes) {
@@ -160,6 +170,44 @@ function renderResources(items, target = $("#resources-list")) {
   target.innerHTML = items.length ? items.map(resourceCard).join("") : emptyState("No resources yet.");
 }
 
+function assignmentCard(item) {
+  const pinned = item.pinned ? `<span class="badge pinned">Pinned</span>` : "";
+  const status = `<span class="badge ${item.status === "open" ? "pinned" : ""}">${escapeHtml(item.status)}</span>`;
+  const saveButton = item.saved
+    ? `<button data-unsave-assignment="${item.id}" type="button">Saved</button>`
+    : `<button data-save-assignment="${item.id}" type="button">Save</button>`;
+  const teacherTools = state.user.role === "teacher"
+    ? `<button data-pin-assignment="${item.id}" data-pinned="${item.pinned ? "1" : "0"}" type="button">${item.pinned ? "Unpin" : "Pin"}</button>
+       <button data-status-assignment="${item.id}" data-status="${item.status === "open" ? "closed" : "open"}" type="button">${item.status === "open" ? "Close" : "Reopen"}</button>
+       <button class="danger" data-delete-assignment="${item.id}" type="button">Archive</button>`
+    : "";
+  const studentTools = state.user.role === "student" && item.status === "open"
+    ? `<button class="primary" data-start-submission="${item.id}" type="button">${item.my_submission_count ? "Submit again" : "Submit work"}</button>`
+    : "";
+  const summary = item.instructions || item.url || "No instructions yet.";
+  const submissionInfo = state.user.role === "teacher"
+    ? `${item.submission_count || 0} submissions`
+    : item.my_submission_count ? "Submitted" : "Not submitted";
+  return `
+    <article class="panel item-card">
+      <div>
+        <div class="item-title-row">
+          <h3>${escapeHtml(item.title)}</h3>
+          <div class="badge-row">${pinned}${status}</div>
+        </div>
+        <div class="item-meta">${dueDate(item.due_at)} - ${escapeHtml(item.creator_name || "Instructor")} - ${submissionInfo}</div>
+      </div>
+      <div class="item-body">${escapeHtml(summary).replaceAll("\n", "<br>")}</div>
+      ${itemLinks(item)}
+      <div class="action-row">${studentTools}${saveButton}${teacherTools}</div>
+    </article>
+  `;
+}
+
+function renderAssignments(items, target = $("#assignments-list")) {
+  target.innerHTML = items.length ? items.map(assignmentCard).join("") : emptyState("No assignments yet.");
+}
+
 function resourceReviewCard(item) {
   const statusBadge = `<span class="badge ${item.status === "pending" ? "pinned" : ""}">${escapeHtml(item.status)}</span>`;
   const summary = item.description || item.body || item.url || "No details added.";
@@ -213,6 +261,31 @@ async function loadResources(savedOnly = false) {
   if (!savedOnly) await loadResourceReviews();
 }
 
+async function loadAssignments(savedOnly = false) {
+  const q = savedOnly ? "" : $("#assignment-search")?.value || "";
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (savedOnly) params.set("saved", "1");
+  const data = await api(`/api/assignments?${params}`);
+  if (!savedOnly) {
+    state.assignments = data.assignments || [];
+  }
+  renderAssignments(data.assignments || [], savedOnly ? $("#saved-list") : $("#assignments-list"));
+}
+
+async function loadSaved() {
+  const [resources, assignments] = await Promise.all([
+    api("/api/resources?saved=1"),
+    api("/api/assignments?saved=1"),
+  ]);
+  const savedResources = resources.resources || [];
+  const savedAssignments = assignments.assignments || [];
+  $("#saved-list").innerHTML = [
+    ...savedAssignments.map(assignmentCard),
+    ...savedResources.map(resourceCard),
+  ].join("") || emptyState("Saved resources and assignments will appear here.");
+}
+
 function dashboardList(items, renderer, empty) {
   if (!items?.length) return emptyState(empty);
   return items.map(renderer).join("");
@@ -241,9 +314,28 @@ function tinyInbox(item) {
   `;
 }
 
+function tinyAssignment(item) {
+  const detail = state.user.role === "teacher"
+    ? `${item.submission_count || 0} submissions`
+    : item.my_submission_count ? "Submitted" : "Not submitted";
+  return `
+    <div class="metric-row">
+      <div>
+        <strong style="font-size:15px;color:var(--ink)">${escapeHtml(item.title)}</strong>
+        <div class="item-meta">${dueDate(item.due_at)} - ${detail}</div>
+      </div>
+      <button data-jump="assignments" type="button">Open</button>
+    </div>
+  `;
+}
+
 function renderDashboard(data) {
   const grid = $("#dashboard-grid");
   const sharedCards = `
+    <article class="panel dashboard-card">
+      <h2>Assignments</h2>
+      ${dashboardList(data.recent_assignments, tinyAssignment, "No assignments posted yet.")}
+    </article>
     <article class="panel dashboard-card">
       <h2>Recent Resources</h2>
       ${dashboardList(data.recent_resources, tinyResource, "No public resources yet.")}
@@ -253,8 +345,8 @@ function renderDashboard(data) {
       ${dashboardList(data.recent_inbox, tinyInbox, "No inbox messages yet.")}
     </article>
     <article class="panel dashboard-card">
-      <h2>Saved Resources</h2>
-      ${dashboardList(data.saved_resources, tinyResource, "Saved items will appear here.")}
+      <h2>Saved</h2>
+      ${dashboardList([...(data.saved_assignments || []), ...(data.saved_resources || [])], (item) => item.instructions !== undefined ? tinyAssignment(item) : tinyResource(item), "Saved items will appear here.")}
     </article>
   `;
 
@@ -382,14 +474,38 @@ async function loadInbox() {
   $("#inbox-list").innerHTML = data.posts?.length ? data.posts.map(inboxPost).join("") : emptyState("No inbox posts yet.");
 }
 
+async function loadAssignmentOptions() {
+  const select = $("#submission-assignment-select");
+  if (!select || state.user.role !== "student") return;
+  const data = await api("/api/assignments");
+  const assignments = data.assignments || [];
+  state.assignments = assignments;
+  const openAssignments = assignments.filter((item) => item.status === "open");
+  const selected = state.pendingAssignmentId || select.value;
+  select.innerHTML = `<option value="">No assignment</option>${openAssignments.map((item) => `
+    <option value="${item.id}">${escapeHtml(item.title)}${item.due_at ? ` - ${escapeHtml(dueDate(item.due_at))}` : ""}</option>
+  `).join("")}`;
+  if (selected && openAssignments.some((item) => String(item.id) === String(selected))) {
+    select.value = selected;
+    const assignment = openAssignments.find((item) => String(item.id) === String(selected));
+    const titleInput = $("#submission-form input[name=\"title\"]");
+    if (titleInput && !titleInput.value) {
+      titleInput.value = `Submission for ${assignment.title}`;
+    }
+    state.pendingAssignmentId = "";
+  }
+}
+
 function submissionCard(item) {
   const detail = item.description || item.text_content || item.url || "No details added.";
+  const assignment = item.assignment_title ? `<div class="item-meta">Assignment: ${escapeHtml(item.assignment_title)}</div>` : "";
   return `
     <article class="panel item-card">
       <div>
         <h3>${escapeHtml(item.title)}</h3>
         <div class="item-meta">${escapeHtml(item.student_name || state.user.name)} · ${compactDate(item.created_at)} · ${item.comment_count || 0} teacher comments</div>
       </div>
+      ${assignment}
       <div class="item-body">${escapeHtml(detail).replaceAll("\n", "<br>")}</div>
       ${itemLinks(item)}
       <div class="action-row">
@@ -400,6 +516,7 @@ function submissionCard(item) {
 }
 
 async function loadSubmissions() {
+  await loadAssignmentOptions();
   const data = await api("/api/submissions");
   state.submissions = data.submissions || [];
   $("#submissions-list").innerHTML = state.submissions.length
@@ -420,6 +537,7 @@ async function openSubmission(id) {
   $("#submission-dialog-title").textContent = item.title;
   $("#submission-dialog-body").innerHTML = `
     <div class="item-meta">${escapeHtml(item.student_name || state.user.name)} · ${compactDate(item.created_at)}</div>
+    ${item.assignment_title ? `<div class="item-meta">Assignment: ${escapeHtml(item.assignment_title)}</div>` : ""}
     <p class="item-body">${escapeHtml(item.description || "").replaceAll("\n", "<br>")}</p>
     ${item.text_content ? `<div class="reply"><strong>Text entry</strong><p>${escapeHtml(item.text_content).replaceAll("\n", "<br>")}</p></div>` : ""}
     ${itemLinks(item)}
@@ -540,13 +658,14 @@ async function loadNotifications() {
 async function loadSection(section) {
   try {
     if (section === "dashboard") await loadDashboard();
+    if (section === "assignments") await loadAssignments();
     if (section === "resources") await loadResources();
     if (section === "inbox") await loadInbox();
     if (section === "submissions") await loadSubmissions();
     if (section === "teacher-room") await loadTeacherRoom();
     if (section === "people") await loadPeople();
     if (section === "ai") await loadAi();
-    if (section === "saved") await loadResources(true);
+    if (section === "saved") await loadSaved();
   } catch (error) {
     toast(error.message, "error");
   }
@@ -694,6 +813,19 @@ async function init() {
     );
   });
 
+  $("#assignment-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitMultipart(event.currentTarget, "/api/assignments", "Assignment posted.");
+  });
+
+  $("#assignment-search-button").addEventListener("click", () => loadAssignments());
+  $("#assignment-search").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadAssignments();
+    }
+  });
+
   $("#resource-search-button").addEventListener("click", () => loadResources());
   $("#resource-search").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -809,7 +941,38 @@ async function init() {
 
     try {
       if (button.dataset.jump) setSection(button.dataset.jump);
+      if (button.dataset.startSubmission) {
+        state.pendingAssignmentId = button.dataset.startSubmission;
+        setSection("submissions");
+      }
       if (button.dataset.openSubmission) await openSubmission(button.dataset.openSubmission);
+      if (button.dataset.saveAssignment) {
+        await api(`/api/assignments/${button.dataset.saveAssignment}/save`, { method: "POST", body: JSON.stringify({}) });
+        await loadSection(state.section);
+      }
+      if (button.dataset.unsaveAssignment) {
+        await api(`/api/assignments/${button.dataset.unsaveAssignment}/save`, { method: "DELETE" });
+        await loadSection(state.section);
+      }
+      if (button.dataset.deleteAssignment) {
+        if (!confirm("Archive this assignment?")) return;
+        await api(`/api/assignments/${button.dataset.deleteAssignment}`, { method: "DELETE" });
+        await loadSection(state.section);
+      }
+      if (button.dataset.pinAssignment) {
+        await api(`/api/assignments/${button.dataset.pinAssignment}`, {
+          method: "PATCH",
+          body: JSON.stringify({ pinned: button.dataset.pinned !== "1" }),
+        });
+        await loadSection(state.section);
+      }
+      if (button.dataset.statusAssignment) {
+        await api(`/api/assignments/${button.dataset.statusAssignment}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: button.dataset.status }),
+        });
+        await loadSection(state.section);
+      }
       if (button.dataset.save) {
         await api(`/api/resources/${button.dataset.save}/save`, { method: "POST", body: JSON.stringify({}) });
         await loadSection(state.section);
