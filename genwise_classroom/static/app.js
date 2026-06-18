@@ -274,16 +274,19 @@ async function loadAssignments(savedOnly = false) {
 }
 
 async function loadSaved() {
-  const [resources, assignments] = await Promise.all([
+  const [resources, assignments, inbox] = await Promise.all([
     api("/api/resources?saved=1"),
     api("/api/assignments?saved=1"),
+    api("/api/inbox?saved=1"),
   ]);
   const savedResources = resources.resources || [];
   const savedAssignments = assignments.assignments || [];
+  const savedInbox = inbox.posts || [];
   $("#saved-list").innerHTML = [
     ...savedAssignments.map(assignmentCard),
+    ...savedInbox.map(savedInboxCard),
     ...savedResources.map(resourceCard),
-  ].join("") || emptyState("Saved resources and assignments will appear here.");
+  ].join("") || emptyState("Saved resources, assignments, and inbox posts will appear here.");
 }
 
 function dashboardList(items, renderer, empty) {
@@ -311,6 +314,23 @@ function tinyInbox(item) {
         <div class="item-meta">${escapeHtml(item.author_name)} · ${compactDate(item.created_at)}</div>
       </div>
     </div>
+  `;
+}
+
+function savedInboxCard(post) {
+  const saveButton = post.saved
+    ? `<button data-unsave-inbox="${post.id}" type="button">Saved</button>`
+    : `<button data-save-inbox="${post.id}" type="button">Save</button>`;
+  return `
+    <article class="panel item-card">
+      <div>
+        <h3>${escapeHtml(post.title)}</h3>
+        <div class="item-meta">Inbox - ${escapeHtml(post.author_name || "Classmate")} - ${compactDate(post.created_at)}</div>
+      </div>
+      <div class="item-body">${escapeHtml(post.body || "No message text.").replaceAll("\n", "<br>")}</div>
+      ${itemLinks(post)}
+      <div class="action-row">${saveButton}<button data-jump="inbox" type="button">Open inbox</button></div>
+    </article>
   `;
 }
 
@@ -346,7 +366,7 @@ function renderDashboard(data) {
     </article>
     <article class="panel dashboard-card">
       <h2>Saved</h2>
-      ${dashboardList([...(data.saved_assignments || []), ...(data.saved_resources || [])], (item) => item.instructions !== undefined ? tinyAssignment(item) : tinyResource(item), "Saved items will appear here.")}
+      ${dashboardList([...(data.saved_assignments || []), ...(data.saved_inbox || []), ...(data.saved_resources || [])], (item) => item.instructions !== undefined ? tinyAssignment(item) : item.deleted_at !== undefined ? tinyInbox(item) : tinyResource(item), "Saved items will appear here.")}
     </article>
   `;
 
@@ -435,6 +455,9 @@ async function loadDashboard() {
 }
 
 function inboxPost(post) {
+  const saveButton = post.saved
+    ? `<button data-unsave-inbox="${post.id}" type="button">Saved</button>`
+    : `<button data-save-inbox="${post.id}" type="button">Save</button>`;
   const teacherTools = state.user.role === "teacher"
     ? `<button data-pin-inbox="${post.id}" data-pinned="${post.pinned ? "1" : "0"}" type="button">${post.pinned ? "Unpin" : "Pin"}</button>
        <button class="danger" data-delete-inbox="${post.id}" type="button">Delete</button>`
@@ -464,7 +487,7 @@ function inboxPost(post) {
         <textarea name="body" rows="2" placeholder="Reply to this inbox post"></textarea>
         <button type="submit">Reply</button>
       </form>
-      <div class="action-row">${teacherTools}</div>
+      <div class="action-row">${saveButton}${teacherTools}</div>
     </article>
   `;
 }
@@ -952,6 +975,14 @@ async function init() {
       }
       if (button.dataset.unsaveAssignment) {
         await api(`/api/assignments/${button.dataset.unsaveAssignment}/save`, { method: "DELETE" });
+        await loadSection(state.section);
+      }
+      if (button.dataset.saveInbox) {
+        await api(`/api/inbox/${button.dataset.saveInbox}/save`, { method: "POST", body: JSON.stringify({}) });
+        await loadSection(state.section);
+      }
+      if (button.dataset.unsaveInbox) {
+        await api(`/api/inbox/${button.dataset.unsaveInbox}/save`, { method: "DELETE" });
         await loadSection(state.section);
       }
       if (button.dataset.deleteAssignment) {

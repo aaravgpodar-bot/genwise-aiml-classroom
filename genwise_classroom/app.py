@@ -595,13 +595,15 @@ def api_dashboard():
             with_file_links(row_to_dict(row), "inbox")
             for row in db.execute(
                 """
-                SELECT p.*, u.name AS author_name
+                SELECT p.*, u.name AS author_name,
+                       EXISTS(SELECT 1 FROM inbox_saves s WHERE s.post_id = p.id AND s.user_id = ?) AS saved
                 FROM inbox_posts p
                 JOIN users u ON u.id = p.author_id
                 WHERE p.deleted_at = ''
                 ORDER BY p.pinned DESC, p.created_at DESC
                 LIMIT 5
-                """
+                """,
+                (user["id"],),
             )
         ]
         recent_assignments = [
@@ -657,6 +659,21 @@ def api_dashboard():
                 (user["id"], user["id"]),
             )
         ]
+        saved_inbox = [
+            with_file_links(row_to_dict(row), "inbox")
+            for row in db.execute(
+                """
+                SELECT p.*, u.name AS author_name, u.role AS author_role, 1 AS saved
+                FROM inbox_saves s
+                JOIN inbox_posts p ON p.id = s.post_id
+                JOIN users u ON u.id = p.author_id
+                WHERE s.user_id = ? AND p.deleted_at = ''
+                ORDER BY s.created_at DESC
+                LIMIT 5
+                """,
+                (user["id"],),
+            )
+        ]
         unread_notifications = db.execute(
             "SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND read_at = ''",
             (user["id"],),
@@ -668,6 +685,7 @@ def api_dashboard():
             "recent_assignments": recent_assignments,
             "saved_resources": saved_resources,
             "saved_assignments": saved_assignments,
+            "saved_inbox": saved_inbox,
             "unread_notifications": unread_notifications,
         }
 
@@ -1250,16 +1268,25 @@ def api_inbox():
         )
         return jsonify({"ok": True, "id": post_id})
 
+    saved_only = request.args.get("saved") == "1"
+    where = "WHERE p.deleted_at = ''"
+    params: list = [user["id"]]
+    if saved_only:
+        where += " AND EXISTS(SELECT 1 FROM inbox_saves ss WHERE ss.post_id = p.id AND ss.user_id = ?)"
+        params.append(user["id"])
+
     with get_db() as db:
         posts = []
         rows = db.execute(
-            """
-            SELECT p.*, u.name AS author_name, u.role AS author_role
+            f"""
+            SELECT p.*, u.name AS author_name, u.role AS author_role,
+                   EXISTS(SELECT 1 FROM inbox_saves s WHERE s.post_id = p.id AND s.user_id = ?) AS saved
             FROM inbox_posts p
             JOIN users u ON u.id = p.author_id
-            WHERE p.deleted_at = ''
+            {where}
             ORDER BY p.pinned DESC, p.created_at DESC
-            """
+            """,
+            tuple(params),
         ).fetchall()
         for row in rows:
             post = with_file_links(row_to_dict(row), "inbox")
@@ -1279,6 +1306,29 @@ def api_inbox():
             post["replies"] = replies
             posts.append(post)
     return jsonify({"posts": posts})
+
+
+@app.route("/api/inbox/<int:post_id>/save", methods=["POST", "DELETE"])
+@login_required
+def api_inbox_save(post_id: int):
+    user = current_user()
+    with get_db() as db:
+        post = row_to_dict(
+            db.execute("SELECT id FROM inbox_posts WHERE id = ? AND deleted_at = ''", (post_id,)).fetchone()
+        )
+    if not post:
+        return jsonify({"error": "Inbox post not found."}), 404
+    if request.method == "POST":
+        try:
+            execute_db(
+                "INSERT INTO inbox_saves (user_id, post_id, created_at) VALUES (?, ?, ?)",
+                (user["id"], post_id, now_iso()),
+            )
+        except sqlite3.IntegrityError:
+            pass
+    else:
+        execute_db("DELETE FROM inbox_saves WHERE user_id = ? AND post_id = ?", (user["id"], post_id))
+    return jsonify({"ok": True})
 
 
 @app.route("/api/inbox/<int:post_id>/reply", methods=["POST"])
