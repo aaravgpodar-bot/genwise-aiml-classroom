@@ -19,6 +19,8 @@ const titles = {
   saved: "Saved",
 };
 
+const autoRefreshSections = new Set(["dashboard", "assignments", "resources", "inbox", "submissions", "saved"]);
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -694,6 +696,18 @@ async function loadSection(section) {
   }
 }
 
+function isEditingFormField() {
+  const active = document.activeElement;
+  return active && ["INPUT", "SELECT", "TEXTAREA"].includes(active.tagName);
+}
+
+async function refreshCurrentSection() {
+  if (!state.user || document.hidden || isEditingFormField() || !autoRefreshSections.has(state.section)) {
+    return;
+  }
+  await loadSection(state.section);
+}
+
 function formToJson(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
@@ -1099,6 +1113,8 @@ async function init() {
   } catch {
     setSignedOut();
   }
+
+  setInterval(refreshCurrentSection, 60000);
 }
 
 init();
