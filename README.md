@@ -99,12 +99,48 @@ Multiple app slugs should be stored as one comma-separated value:
 APP_SLUGS=aarav-genwise-aiml-classroom,akshaan-class-resource-hub,parnika-class-resource-hub,sohum-code-the-future-dashboard,prayan-genwise-camp,aara
 ```
 
-## Permanent Free URL Options
+## Permanent PythonAnywhere URL
 
-For this Flask app, the most practical free permanent URL is PythonAnywhere's free web app subdomain:
+The permanent free URL for this app should be the PythonAnywhere subdomain:
 
 ```text
-yourusername.pythonanywhere.com
+https://AaravG13.pythonanywhere.com
 ```
 
-Cloudflare Tunnel links are useful for testing but can change. GitHub Pages and Cloudflare Pages provide stable free subdomains, but they are designed for static sites, so they would only host a future frontend unless the Flask backend lives somewhere else.
+Cloudflare Tunnel links are useful for testing but can change. Use PythonAnywhere for the permanent camp link.
+
+### PythonAnywhere Setup
+
+In the PythonAnywhere Web tab:
+
+1. Set the source code directory to the cloned repo folder, for example:
+
+```text
+/home/AaravG13/genwise-aiml-classroom
+```
+
+2. Edit the WSGI configuration file and use the contents of `pythonanywhere_wsgi.py`.
+
+3. Add these environment variables in the WSGI file before importing the app, or in PythonAnywhere's environment variable UI if available:
+
+```text
+GENWISE_SECRET_KEY=<long-random-secret>
+GENWISE_DATA_DIR=/home/AaravG13/genwise_data
+SUPABASE_URL=https://lccnubtvrjlihvyrowgq.supabase.co
+SUPABASE_ANON_KEY=<anon-key>
+SUPABASE_PROJECT_REF=lccnubtvrjlihvyrowgq
+SUPABASE_STORAGE_BUCKET=class-resources
+APP_SLUGS=aarav-genwise-aiml-classroom,akshaan-class-resource-hub,parnika-class-resource-hub,sohum-code-the-future-dashboard,prayan-genwise-camp,aara
+```
+
+4. Run this once in a PythonAnywhere Bash console:
+
+```bash
+cd /home/AaravG13/genwise-aiml-classroom
+python -m pip install --user -r requirements.txt
+mkdir -p /home/AaravG13/genwise_data
+```
+
+5. Reload the web app from the PythonAnywhere Web tab.
+
+After reload, `/health` should return JSON instead of the default PythonAnywhere page.
