@@ -61,6 +61,7 @@ Supabase is now partially wired in:
 - `.env` is loaded automatically when the Flask app starts
 - `/api/supabase/status` checks the configured Supabase project and storage bucket
 - file uploads are saved locally first, then mirrored to Supabase Storage when bucket policies allow the anon key to upload
+- shared files from configured `APP_SLUGS` are listed from Supabase Storage in Resources and Submissions
 - the main app database still uses SQLite until a database password, direct connection string, or service-role key is provided for a safe migration
 
 ## Supabase Variables
@@ -95,7 +96,7 @@ VITE_SUPABASE_ANON_KEY
 Multiple app slugs should be stored as one comma-separated value:
 
 ```text
-APP_SLUGS=akshaan-class-resource-hub,parnika-class-resource-hub,sohum-code-the-future-dashboard,prayan-genwise-camp,aara
+APP_SLUGS=aarav-genwise-aiml-classroom,akshaan-class-resource-hub,parnika-class-resource-hub,sohum-code-the-future-dashboard,prayan-genwise-camp,aara
 ```
 
 ## Permanent Free URL Options

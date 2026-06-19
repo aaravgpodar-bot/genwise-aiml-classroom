@@ -83,12 +83,61 @@ class SupabaseClient:
         except (URLError, TimeoutError) as error:
             return False, str(error)
 
+    def _post_json(self, url: str, payload: dict) -> tuple[bool, dict | list | str]:
+        request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=self._headers("application/json"),
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=12) as response:
+                body = response.read().decode("utf-8", "replace")
+                return True, json.loads(body) if body else {}
+        except HTTPError as error:
+            body = error.read().decode("utf-8", "replace")
+            return False, body or str(error)
+        except (URLError, TimeoutError) as error:
+            return False, str(error)
+
     def storage_status(self) -> dict:
         if not self.config.configured:
             return {"ok": False, "message": "Supabase is not fully configured."}
         bucket = quote(self.config.storage_bucket, safe="")
         ok, payload = self._request_json(f"{self.config.url}/storage/v1/bucket/{bucket}")
+        if not ok:
+            list_result = self.list_files("", limit=1)
+            if list_result.get("ok"):
+                return {
+                    "ok": True,
+                    "message": "Storage listing works. Bucket details are not readable with the anon key.",
+                }
         return {"ok": ok, "message": payload}
+
+    def public_url(self, object_name: str) -> str:
+        bucket = quote(self.config.storage_bucket, safe="")
+        safe_object = "/".join(quote(part, safe="") for part in object_name.split("/") if part)
+        return f"{self.config.url}/storage/v1/object/public/{bucket}/{safe_object}"
+
+    def list_files(self, prefix: str = "", limit: int = 100) -> dict:
+        if not self.config.configured:
+            return {"ok": False, "files": [], "message": "Supabase is not configured."}
+        bucket = quote(self.config.storage_bucket, safe="")
+        url = f"{self.config.url}/storage/v1/object/list/{bucket}"
+        ok, payload = self._post_json(
+            url,
+            {
+                "prefix": prefix.strip("/"),
+                "limit": limit,
+                "offset": 0,
+                "sortBy": {"column": "updated_at", "order": "desc"},
+            },
+        )
+        if not ok:
+            return {"ok": False, "files": [], "message": payload}
+        if not isinstance(payload, list):
+            return {"ok": False, "files": [], "message": payload}
+        return {"ok": True, "files": payload, "message": "ok"}
 
     def upload_file(self, path: Path, object_name: str, content_type: str) -> dict:
         if not self.config.configured:

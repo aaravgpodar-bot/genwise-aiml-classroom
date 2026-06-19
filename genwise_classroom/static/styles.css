@@ -640,6 +640,12 @@ textarea:focus {
   background: var(--accent);
 }
 
+.cloud {
+  color: #ffffff;
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
 .action-row {
   display: flex;
   gap: 8px;

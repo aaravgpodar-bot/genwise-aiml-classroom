@@ -39,6 +39,7 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "genwise.db"
 SUPABASE_CONFIG = SupabaseConfig.from_env()
 SUPABASE_CLIENT = SupabaseClient(SUPABASE_CONFIG)
+DEFAULT_APP_SLUG = "aarav-genwise-aiml-classroom"
 
 STUDENT_UPLOAD_LIMIT = 200 * 1024 * 1024
 TEACHER_UPLOAD_LIMIT = 600 * 1024 * 1024
@@ -576,7 +577,7 @@ def save_upload(file, bucket: str, user: dict) -> dict:
         abort(413, description="This upload is larger than the allowed limit for your role.")
 
     if SUPABASE_CONFIG.configured:
-        slug = SUPABASE_CONFIG.app_slugs[0] if SUPABASE_CONFIG.app_slugs else "aarav-genwise-aiml-classroom"
+        slug = current_app_slug()
         object_name = f"{slug}/{bucket}/{stored}"
         result = SUPABASE_CLIENT.upload_file(path, object_name, file.mimetype or "application/octet-stream")
         if result.get("ok"):
@@ -592,6 +593,74 @@ def save_upload(file, bucket: str, user: dict) -> dict:
     }
 
 
+def current_app_slug() -> str:
+    return SUPABASE_CONFIG.app_slugs[0] if SUPABASE_CONFIG.app_slugs else DEFAULT_APP_SLUG
+
+
+def supabase_object_url(object_name: str) -> str:
+    if not SUPABASE_CONFIG.configured:
+        return ""
+    return SUPABASE_CLIENT.public_url(object_name)
+
+
+def supabase_shared_files(bucket: str) -> tuple[list[dict], list[str]]:
+    if not SUPABASE_CONFIG.configured:
+        return [], ["Supabase is not configured."]
+    slugs = SUPABASE_CONFIG.app_slugs or (DEFAULT_APP_SLUG,)
+    files: list[dict] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+
+    for slug in slugs:
+        prefix = f"{slug}/{bucket}"
+        result = SUPABASE_CLIENT.list_files(prefix, limit=100)
+        if not result.get("ok"):
+            errors.append(f"{prefix}: {result.get('message')}")
+            continue
+
+        for obj in result.get("files", []):
+            if not isinstance(obj, dict):
+                continue
+            name = clean_text(obj.get("name"), 500)
+            if not name or name.endswith("/") or name.endswith(".meta.json"):
+                continue
+            object_name = f"{prefix}/{name}"
+            if object_name in seen:
+                continue
+            seen.add(object_name)
+            metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+            size = metadata.get("size") or metadata.get("contentLength") or 0
+            files.append(
+                {
+                    "id": f"cloud:{object_name}",
+                    "cloud_only": True,
+                    "source": "supabase",
+                    "app_slug": slug,
+                    "bucket": bucket,
+                    "title": Path(name).stem or name,
+                    "kind": "cloud file",
+                    "description": f"Shared Supabase file from {slug}.",
+                    "body": "",
+                    "url": "",
+                    "tags": "supabase,cloud",
+                    "original_filename": name,
+                    "stored_filename": name,
+                    "mime_type": metadata.get("mimetype") or metadata.get("mimeType") or "",
+                    "file_size": int(size) if str(size).isdigit() else 0,
+                    "uploader_name": slug,
+                    "student_name": slug,
+                    "created_at": obj.get("created_at") or obj.get("updated_at") or now_iso(),
+                    "updated_at": obj.get("updated_at") or obj.get("created_at") or now_iso(),
+                    "has_file": True,
+                    "download_url": supabase_object_url(object_name),
+                    "preview_url": supabase_object_url(object_name),
+                }
+            )
+
+    files.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
+    return files, errors
+
+
 def can_preview(item: dict) -> bool:
     if not item.get("stored_filename"):
         return False
@@ -601,6 +670,11 @@ def can_preview(item: dict) -> bool:
 
 
 def with_file_links(item: dict, bucket: str) -> dict:
+    if item.get("cloud_only"):
+        item["has_file"] = True
+        item["download_url"] = item.get("download_url") or ""
+        item["preview_url"] = item.get("preview_url") or ""
+        return item
     item["has_file"] = bool(item.get("stored_filename"))
     item["download_url"] = url_for("download_file", bucket=bucket, item_id=item["id"]) if item["has_file"] else ""
     item["preview_url"] = (
@@ -1304,7 +1378,18 @@ def api_resources():
             """,
             tuple(params),
         ).fetchall()
-    return jsonify({"resources": [with_file_links(row_to_dict(row), "resources") for row in rows]})
+    resources = [with_file_links(row_to_dict(row), "resources") for row in rows]
+    cloud_files, cloud_errors = supabase_shared_files("resources") if not saved_only else ([], [])
+    if q:
+        cloud_files = [
+            item
+            for item in cloud_files
+            if q in item["title"].lower()
+            or q in item["description"].lower()
+            or q in item["original_filename"].lower()
+            or q in item["app_slug"].lower()
+        ]
+    return jsonify({"resources": resources + cloud_files, "cloud_errors": cloud_errors})
 
 
 @app.route("/api/resource-reviews")
@@ -1690,7 +1775,23 @@ def api_submissions():
                 params,
             )
         ]
-    return jsonify({"submissions": submissions})
+    cloud_files, cloud_errors = supabase_shared_files("submissions")
+    for item in cloud_files:
+        item["visibility"] = "class"
+        item["comment_count"] = 0
+        item["assignment_title"] = ""
+        item["text_content"] = ""
+    return jsonify({"submissions": submissions + cloud_files, "cloud_errors": cloud_errors})
+
+
+@app.route("/api/supabase/files")
+@login_required
+def api_supabase_files():
+    bucket = clean_text(request.args.get("bucket"), 40)
+    if bucket not in {"resources", "submissions", "assignments", "inbox"}:
+        bucket = "resources"
+    files, errors = supabase_shared_files(bucket)
+    return jsonify({"files": files, "errors": errors})
 
 
 @app.route("/api/submissions/<int:submission_id>/comments", methods=["GET", "POST"])
@@ -1819,8 +1920,8 @@ def api_notifications():
 def api_supabase_status():
     status = SUPABASE_CONFIG.public_status()
     status["storage"] = SUPABASE_CLIENT.storage_status()
-    status["database_mode"] = "postgres" if os.getenv("DATABASE_URL") else "sqlite"
-    status["database_note"] = "Supabase PostgreSQL database is connected and active in the aarav schema." if os.getenv("DATABASE_URL") else "Supabase database needs a DB password or service role key before migration."
+    status["database_mode"] = "sqlite"
+    status["database_note"] = "App data still uses the local SQLite classroom database. Supabase is being used for uploaded files only."
     return jsonify(status)
 
 

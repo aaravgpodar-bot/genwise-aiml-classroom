@@ -142,10 +142,11 @@ function emptyState(text) {
 
 function resourceCard(item) {
   const pinned = item.pinned ? `<span class="badge pinned">Pinned</span>` : "";
-  const saveButton = item.saved
+  const cloudBadge = item.cloud_only ? `<span class="badge cloud">Supabase</span>` : "";
+  const saveButton = item.cloud_only ? "" : item.saved
     ? `<button data-unsave="${item.id}" type="button">Saved</button>`
     : `<button data-save="${item.id}" type="button">Save</button>`;
-  const teacherTools = state.user.role === "teacher"
+  const teacherTools = state.user.role === "teacher" && !item.cloud_only
     ? `<button data-pin-resource="${item.id}" data-pinned="${item.pinned ? "1" : "0"}" type="button">${item.pinned ? "Unpin" : "Pin"}</button>
        <button class="danger" data-delete-resource="${item.id}" type="button">Delete</button>`
     : "";
@@ -155,7 +156,7 @@ function resourceCard(item) {
       <div>
         <div class="item-title-row">
           <h3>${escapeHtml(item.title)}</h3>
-          ${pinned}
+          <div class="badge-row">${cloudBadge}${pinned}</div>
         </div>
         <div class="item-meta">${escapeHtml(item.kind)}  -  ${escapeHtml(item.uploader_name || "Teacher")}  -  ${compactDate(item.created_at)}</div>
       </div>
@@ -524,20 +525,24 @@ async function loadAssignmentOptions() {
 function submissionCard(item) {
   const detail = item.description || item.text_content || item.url || "No details added.";
   const assignment = item.assignment_title ? `<div class="item-meta">Assignment: ${escapeHtml(item.assignment_title)}</div>` : "";
+  const cloudBadge = item.cloud_only ? `<span class="badge cloud">Supabase</span>` : "";
   const visibility = item.visibility === "class" ? `<span class="badge pinned">Class shared</span>` : `<span class="badge">Private</span>`;
   const commentLabel = item.visibility === "class" ? "comments" : "teacher comments";
+  const commentsButton = item.cloud_only
+    ? ""
+    : `<button data-open-submission="${item.id}" type="button">Open comments</button>`;
   return `
     <article class="panel item-card">
       <div>
         <h3>${escapeHtml(item.title)}</h3>
-        <div class="badge-row">${visibility}</div>
+        <div class="badge-row">${cloudBadge}${visibility}</div>
         <div class="item-meta">${escapeHtml(item.student_name || state.user.name)} - ${compactDate(item.created_at)} - ${item.comment_count || 0} ${commentLabel}</div>
       </div>
       ${assignment}
       <div class="item-body">${escapeHtml(detail).replaceAll("\n", "<br>")}</div>
       ${itemLinks(item)}
       <div class="action-row">
-        <button data-open-submission="${item.id}" type="button">Open comments</button>
+        ${commentsButton}
       </div>
     </article>
   `;
