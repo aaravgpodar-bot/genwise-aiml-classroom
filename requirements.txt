@@ -1,3 +1,4 @@
 Flask>=3.1
 Werkzeug>=3.1
 gunicorn>=23.0
+pg8000>=1.31
