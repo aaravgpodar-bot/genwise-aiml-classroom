@@ -933,6 +933,12 @@ def api_dashboard():
                 (user["id"],),
             )
         ]
+        cloud_resources, _ = supabase_shared_files("resources")
+        recent_resources = sorted(
+            recent_resources + cloud_resources,
+            key=lambda item: item.get("updated_at") or item.get("created_at") or "",
+            reverse=True,
+        )[:5]
         recent_inbox = [
             with_file_links(row_to_dict(row), "inbox")
             for row in db.execute(
