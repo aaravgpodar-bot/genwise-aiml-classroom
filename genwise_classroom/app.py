@@ -4,7 +4,6 @@ import secrets
 import shutil
 import sqlite3
 import uuid
-import pg8000
 import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -24,6 +23,11 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+
+try:
+    import pg8000
+except ImportError:
+    pg8000 = None
 
 try:
     from .supabase_integration import SupabaseClient, SupabaseConfig, load_dotenv
@@ -212,6 +216,8 @@ class PostgresConnectionWrapper:
 def get_db():
     db_url = os.getenv("DATABASE_URL")
     if db_url:
+        if pg8000 is None:
+            raise RuntimeError("DATABASE_URL is set, but pg8000 is not installed.")
         import urllib.parse
         parsed = urllib.parse.urlparse(db_url)
         conn = pg8000.connect(
