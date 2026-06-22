@@ -44,6 +44,7 @@ DB_PATH = DATA_DIR / "genwise.db"
 SUPABASE_CONFIG = SupabaseConfig.from_env()
 SUPABASE_CLIENT = SupabaseClient(SUPABASE_CONFIG)
 DEFAULT_APP_SLUG = "aarav-genwise-aiml-classroom"
+APP_VERSION = "2026-06-22-transcripts-v2"
 
 STUDENT_UPLOAD_LIMIT = 200 * 1024 * 1024
 TEACHER_UPLOAD_LIMIT = 600 * 1024 * 1024
@@ -1866,6 +1867,29 @@ def api_supabase_files():
     return jsonify({"files": files, "errors": errors})
 
 
+@app.route("/api/public/resources")
+def api_public_resources():
+    files, errors = supabase_shared_files("resources")
+    return jsonify(
+        {
+            "app_version": APP_VERSION,
+            "count": len(files),
+            "files": [
+                {
+                    "title": item.get("title"),
+                    "original_filename": item.get("original_filename"),
+                    "app_slug": item.get("app_slug"),
+                    "updated_at": item.get("updated_at"),
+                    "download_url": item.get("download_url"),
+                }
+                for item in files
+            ],
+            "shared_resource_prefixes": list(shared_resource_prefixes()),
+            "errors": errors,
+        }
+    )
+
+
 @app.route("/api/submissions/<int:submission_id>/comments", methods=["GET", "POST"])
 @login_required
 def api_submission_comments(submission_id: int):
@@ -2229,8 +2253,10 @@ def health():
         {
             "ok": True,
             "app": "GenWise AI/ML Classroom",
+            "version": APP_VERSION,
             "supabase_configured": SUPABASE_CONFIG.configured,
             "database_mode": "sqlite",
+            "shared_resource_prefixes": list(shared_resource_prefixes()),
         }
     )
 
