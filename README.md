@@ -10,7 +10,7 @@ GenWise AI/ML Classroom is a classroom portal for AI/ML learning. It includes:
 - Teacher-only room
 - Saved resources
 - Local research assistant that searches classroom resources
-- Prototype forgot-password reset codes
+- Forgot-password reset codes by email when Resend is configured
 
 ## Run Locally
 
@@ -29,7 +29,7 @@ http://127.0.0.1:8777
 
 Students and teachers can sign up and enter the classroom right away. Teachers can still change roles, disable accounts, or clean up test accounts from the People view.
 
-Forgot-password uses a prototype reset code shown in the app. For a real public classroom, connect an email provider such as Resend or Supabase Auth email before relying on password reset in production.
+Forgot-password emails a reset code when Resend is configured. If `RESEND_API_KEY` is missing, local development falls back to showing the reset code on screen.
 
 ## Deployment
 
@@ -98,6 +98,17 @@ Multiple app slugs should be stored as one comma-separated value:
 ```text
 APP_SLUGS=aarav-genwise-aiml-classroom,akshaan-class-resource-hub,parnika-class-resource-hub,sohum-code-the-future-dashboard,prayan-genwise-camp,aara
 ```
+
+## Email Reset Variables
+
+Set these for real forgot-password emails:
+
+```text
+RESEND_API_KEY
+RESEND_FROM_EMAIL
+```
+
+`RESEND_FROM_EMAIL` must be a sender allowed by your Resend account, for example a verified domain sender or Resend's test sender.
 
 ## Permanent PythonAnywhere URL
 

@@ -617,51 +617,62 @@ def supabase_shared_files(bucket: str) -> tuple[list[dict], list[str]]:
     errors: list[str] = []
     seen: set[str] = set()
 
-    for slug in slugs:
-        prefix = f"{slug}/{bucket}"
+    def add_file(slug: str, prefix: str, obj: dict) -> None:
+        name = clean_text(obj.get("name"), 500)
+        if not name or name.endswith("/") or name.endswith(".meta.json"):
+            return
+        metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+        if not metadata and not Path(name).suffix:
+            return
+        object_name = f"{prefix}/{name}" if prefix else name
+        if object_name in seen:
+            return
+        seen.add(object_name)
+        size = metadata.get("size") or metadata.get("contentLength") or 0
+        files.append(
+            {
+                "id": f"cloud:{object_name}",
+                "cloud_only": True,
+                "source": "supabase",
+                "app_slug": slug,
+                "bucket": bucket,
+                "title": Path(name).stem or name,
+                "kind": "cloud file",
+                "description": f"Shared Supabase file from {slug}.",
+                "body": "",
+                "url": "",
+                "tags": "supabase,cloud",
+                "original_filename": name,
+                "stored_filename": name,
+                "mime_type": metadata.get("mimetype") or metadata.get("mimeType") or "",
+                "file_size": int(size) if str(size).isdigit() else 0,
+                "uploader_name": slug,
+                "student_name": slug,
+                "created_at": obj.get("created_at") or obj.get("updated_at") or now_iso(),
+                "updated_at": obj.get("updated_at") or obj.get("created_at") or now_iso(),
+                "has_file": True,
+                "download_url": supabase_object_url(object_name),
+                "preview_url": supabase_object_url(object_name),
+            }
+        )
+
+    def scan_prefix(slug: str, prefix: str) -> None:
         result = SUPABASE_CLIENT.list_files(prefix, limit=100)
         if not result.get("ok"):
             errors.append(f"{prefix}: {result.get('message')}")
-            continue
+            return
 
         for obj in result.get("files", []):
             if not isinstance(obj, dict):
                 continue
-            name = clean_text(obj.get("name"), 500)
-            if not name or name.endswith("/") or name.endswith(".meta.json"):
-                continue
-            object_name = f"{prefix}/{name}"
-            if object_name in seen:
-                continue
-            seen.add(object_name)
-            metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
-            size = metadata.get("size") or metadata.get("contentLength") or 0
-            files.append(
-                {
-                    "id": f"cloud:{object_name}",
-                    "cloud_only": True,
-                    "source": "supabase",
-                    "app_slug": slug,
-                    "bucket": bucket,
-                    "title": Path(name).stem or name,
-                    "kind": "cloud file",
-                    "description": f"Shared Supabase file from {slug}.",
-                    "body": "",
-                    "url": "",
-                    "tags": "supabase,cloud",
-                    "original_filename": name,
-                    "stored_filename": name,
-                    "mime_type": metadata.get("mimetype") or metadata.get("mimeType") or "",
-                    "file_size": int(size) if str(size).isdigit() else 0,
-                    "uploader_name": slug,
-                    "student_name": slug,
-                    "created_at": obj.get("created_at") or obj.get("updated_at") or now_iso(),
-                    "updated_at": obj.get("updated_at") or obj.get("created_at") or now_iso(),
-                    "has_file": True,
-                    "download_url": supabase_object_url(object_name),
-                    "preview_url": supabase_object_url(object_name),
-                }
-            )
+            add_file(slug, prefix, obj)
+
+    for slug in slugs:
+        if bucket == "resources":
+            scan_prefix(slug, slug)
+            scan_prefix(slug, f"{slug}/resources")
+        else:
+            scan_prefix(slug, f"{slug}/{bucket}")
 
     files.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
     return files, errors
@@ -696,6 +707,35 @@ def create_notification(user_id: int, message: str, link: str = "") -> None:
         "INSERT INTO notifications (user_id, message, link, read_at, created_at) VALUES (?, ?, ?, '', ?)",
         (user_id, message, link, now_iso()),
     )
+
+
+def send_password_reset_email(email: str, code: str) -> dict:
+    api_key = os.getenv("RESEND_API_KEY", "").strip()
+    from_email = os.getenv("RESEND_FROM_EMAIL", "GenWise Classroom <onboarding@resend.dev>").strip()
+    if not api_key:
+        return {"ok": False, "configured": False, "message": "Resend is not configured."}
+
+    try:
+        import resend
+
+        resend.api_key = api_key
+        resend.Emails.send(
+            {
+                "from": from_email,
+                "to": [email],
+                "subject": "Your GenWise password reset code",
+                "html": f"""
+                    <p>Your GenWise password reset code is:</p>
+                    <p style="font-size:24px;font-weight:700;letter-spacing:4px;">{code}</p>
+                    <p>This code expires in 15 minutes. If you did not request it, you can ignore this email.</p>
+                """,
+                "text": f"Your GenWise password reset code is {code}. It expires in 15 minutes.",
+            }
+        )
+        return {"ok": True, "configured": True, "message": "Reset code emailed."}
+    except Exception as error:
+        app.logger.warning("Password reset email failed for %s: %s", email, error)
+        return {"ok": False, "configured": True, "message": "Email could not be sent."}
 
 
 def require_submission_access(submission_id: int) -> dict:
@@ -793,7 +833,7 @@ def api_login():
 def api_password_reset_request():
     data = request.get_json(force=True)
     email = normalize_email(data.get("email"))
-    generic_message = "If that account exists, a reset code has been created."
+    generic_message = "If that account exists, a reset code has been emailed."
     if not email:
         return jsonify({"error": "Enter the email address for the account."}), 400
 
@@ -823,11 +863,18 @@ def api_password_reset_request():
         )
         db.commit()
 
+    email_result = send_password_reset_email(email, code)
+    if email_result.get("ok"):
+        return jsonify({"ok": True, "message": "Reset code emailed. Check your inbox."})
+    if email_result.get("configured"):
+        return jsonify({"error": "Could not email the reset code. Ask an instructor to check the email settings."}), 500
+
     return jsonify(
         {
             "ok": True,
-            "message": "Prototype reset code created. Use it within 15 minutes.",
+            "message": "Email is not configured yet. Use this local reset code within 15 minutes.",
             "reset_code": code,
+            "email_configured": False,
         }
     )
 

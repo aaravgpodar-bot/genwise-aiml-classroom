@@ -434,6 +434,63 @@ textarea:focus {
   gap: 14px;
 }
 
+.dashboard-hero {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(420px, 0.8fr);
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 12%, var(--surface)), var(--surface)),
+    var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.dashboard-hero h2 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+.dashboard-hero p {
+  margin: 0;
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stat-strip div {
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 80%, var(--surface-soft));
+}
+
+.stat-strip strong {
+  display: block;
+  color: var(--primary-strong);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.stat-strip span {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .dashboard-card {
   padding: 16px;
   display: grid;
@@ -442,8 +499,23 @@ textarea:focus {
   min-height: 178px;
 }
 
+.dashboard-card-wide {
+  grid-column: span 2;
+}
+
 .dashboard-card h2 {
   font-size: 17px;
+  margin: 0;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-title-row h2 {
   margin: 0;
 }
 
@@ -828,12 +900,20 @@ dialog::backdrop {
   .dashboard-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .dashboard-hero {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 980px) {
   .dashboard-grid,
   .item-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-card-wide {
+    grid-column: 1 / -1;
   }
 
   .ai-layout {
@@ -876,6 +956,14 @@ dialog::backdrop {
   .item-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-hero {
+    padding: 15px;
+  }
+
+  .stat-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .list-mode .item-card {

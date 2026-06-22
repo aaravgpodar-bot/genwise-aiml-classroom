@@ -298,12 +298,16 @@ function dashboardList(items, renderer, empty) {
 }
 
 function tinyResource(item) {
+  const source = item.cloud_only
+    ? `<span class="badge cloud">Supabase</span>`
+    : `<span class="badge">Local</span>`;
   return `
     <div class="metric-row">
       <div>
         <strong style="font-size:15px;color:var(--ink)">${escapeHtml(item.title)}</strong>
-        <div class="item-meta">${escapeHtml(item.kind || "resource")}  -  ${compactDate(item.created_at)}</div>
+        <div class="item-meta">${escapeHtml(item.kind || "resource")} - ${escapeHtml(item.uploader_name || item.app_slug || "Class")} - ${compactDate(item.created_at)}</div>
       </div>
+      ${source}
       ${item.download_url ? `<a href="${escapeHtml(item.download_url)}">Download</a>` : ""}
     </div>
   `;
@@ -354,14 +358,41 @@ function tinyAssignment(item) {
 
 function renderDashboard(data) {
   const grid = $("#dashboard-grid");
+  const recentResources = data.recent_resources || [];
+  const cloudResources = recentResources.filter((item) => item.cloud_only);
+  const localResources = recentResources.filter((item) => !item.cloud_only);
+  const savedCount = (data.saved_assignments || []).length + (data.saved_inbox || []).length + (data.saved_resources || []).length;
+  const openAssignments = (data.recent_assignments || []).filter((item) => item.status === "open").length;
+  const dashboardIntro = `
+    <section class="dashboard-hero">
+      <div>
+        <p class="eyebrow">Live Classroom</p>
+        <h2>${state.user.role === "teacher" ? "Teaching workspace" : "Your camp workspace"}</h2>
+        <p>New uploads appear in Resources and recent Supabase files show here automatically. This page refreshes every minute.</p>
+      </div>
+      <div class="stat-strip">
+        <div><strong>${openAssignments}</strong><span>Open assignments</span></div>
+        <div><strong>${recentResources.length}</strong><span>Recent resources</span></div>
+        <div><strong>${cloudResources.length}</strong><span>Cloud uploads</span></div>
+        <div><strong>${savedCount}</strong><span>Saved</span></div>
+      </div>
+    </section>
+  `;
   const sharedCards = `
-    <article class="panel dashboard-card">
+    <article class="panel dashboard-card dashboard-card-wide">
       <h2>Assignments</h2>
       ${dashboardList(data.recent_assignments, tinyAssignment, "No assignments posted yet.")}
     </article>
+    <article class="panel dashboard-card dashboard-card-wide">
+      <div class="card-title-row">
+        <h2>Cloud Resources</h2>
+        <button data-jump="resources" type="button">Open resources</button>
+      </div>
+      ${dashboardList(cloudResources, tinyResource, "No Supabase uploads from other apps yet.")}
+    </article>
     <article class="panel dashboard-card">
-      <h2>Recent Resources</h2>
-      ${dashboardList(data.recent_resources, tinyResource, "No public resources yet.")}
+      <h2>Recent Local Resources</h2>
+      ${dashboardList(localResources, tinyResource, "No local resources yet.")}
     </article>
     <article class="panel dashboard-card">
       <h2>Inbox Updates</h2>
@@ -379,6 +410,7 @@ function renderDashboard(data) {
     const activity = data.student_activity || [];
     const resourceReviews = data.resource_reviews || [];
     grid.innerHTML = `
+      ${dashboardIntro}
       <article class="panel dashboard-card">
         <h2>People</h2>
         <div class="metric-row"><span>Recent accounts</span><strong>${people.length}</strong></div>
@@ -415,6 +447,7 @@ function renderDashboard(data) {
   } else {
     const myResourceReviews = data.my_resource_reviews || [];
     grid.innerHTML = `
+      ${dashboardIntro}
       <article class="panel dashboard-card">
         <h2>Latest Feedback</h2>
         ${dashboardList(data.latest_teacher_comments, (comment) => `
@@ -810,11 +843,15 @@ async function init() {
         body: JSON.stringify(formToJson(form)),
       });
       const email = form.email.value;
+      const codePanel = $("#password-reset-code-panel");
       $("#password-reset-confirm-form input[name=\"email\"]").value = email;
-      $("#password-reset-code").textContent = data.reset_code
-        ? `${data.reset_code} expires in 15 minutes.`
-        : data.message;
-      $("#password-reset-code-panel").classList.remove("hidden");
+      if (data.reset_code) {
+        $("#password-reset-code").textContent = `${data.reset_code} expires in 15 minutes.`;
+        codePanel.classList.remove("hidden");
+      } else {
+        $("#password-reset-code").textContent = "";
+        codePanel.classList.add("hidden");
+      }
       toast(data.message || "Reset code created.");
     } catch (error) {
       toast(error.message, "error");
