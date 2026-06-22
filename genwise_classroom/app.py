@@ -603,6 +603,15 @@ def current_app_slug() -> str:
     return SUPABASE_CONFIG.app_slugs[0] if SUPABASE_CONFIG.app_slugs else DEFAULT_APP_SLUG
 
 
+def shared_resource_prefixes() -> tuple[str, ...]:
+    raw_prefixes = os.getenv("SUPABASE_SHARED_RESOURCE_PREFIXES", "class_transcripts")
+    return tuple(
+        prefix.strip().strip("/")
+        for prefix in raw_prefixes.replace(";", ",").split(",")
+        if prefix.strip().strip("/")
+    )
+
+
 def supabase_object_url(object_name: str) -> str:
     if not SUPABASE_CONFIG.configured:
         return ""
@@ -673,6 +682,10 @@ def supabase_shared_files(bucket: str) -> tuple[list[dict], list[str]]:
             scan_prefix(slug, f"{slug}/resources")
         else:
             scan_prefix(slug, f"{slug}/{bucket}")
+
+    if bucket == "resources":
+        for prefix in shared_resource_prefixes():
+            scan_prefix(prefix, prefix)
 
     files.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
     return files, errors

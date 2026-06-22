@@ -61,7 +61,7 @@ Supabase is now partially wired in:
 - `.env` is loaded automatically when the Flask app starts
 - `/api/supabase/status` checks the configured Supabase project and storage bucket
 - file uploads are saved locally first, then mirrored to Supabase Storage when bucket policies allow the anon key to upload
-- shared files from configured `APP_SLUGS` are listed from Supabase Storage in Resources and Submissions
+- shared files from configured `APP_SLUGS` and shared resource folders are listed from Supabase Storage in Resources and Submissions
 - the main app database still uses SQLite until a database password, direct connection string, or service-role key is provided for a safe migration
 
 ## Supabase Variables
@@ -76,6 +76,7 @@ SUPABASE_ANON_KEY
 SUPABASE_PROJECT_REF
 SUPABASE_STORAGE_BUCKET
 APP_SLUGS
+SUPABASE_SHARED_RESOURCE_PREFIXES
 ```
 
 Optional values needed for a full Supabase database migration:
@@ -97,6 +98,12 @@ Multiple app slugs should be stored as one comma-separated value:
 
 ```text
 APP_SLUGS=aarav-genwise-aiml-classroom,akshaan-class-resource-hub,parnika-class-resource-hub,sohum-code-the-future-dashboard,prayan-genwise-camp,aara
+```
+
+Shared class folders outside app slugs can be listed too:
+
+```text
+SUPABASE_SHARED_RESOURCE_PREFIXES=class_transcripts
 ```
 
 ## Email Reset Variables
@@ -142,6 +149,7 @@ SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_PROJECT_REF=lccnubtvrjlihvyrowgq
 SUPABASE_STORAGE_BUCKET=class-resources
 APP_SLUGS=aarav-genwise-aiml-classroom,akshaan-class-resource-hub,parnika-class-resource-hub,sohum-code-the-future-dashboard,prayan-genwise-camp,aara
+SUPABASE_SHARED_RESOURCE_PREFIXES=class_transcripts
 ```
 
 4. Run this once in a PythonAnywhere Bash console:
