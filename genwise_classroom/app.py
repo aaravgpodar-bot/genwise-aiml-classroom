@@ -998,7 +998,7 @@ def api_dashboard():
             recent_resources + cloud_resources,
             key=lambda item: item.get("updated_at") or item.get("created_at") or "",
             reverse=True,
-        )[:5]
+        )[:12]
         recent_inbox = [
             with_file_links(row_to_dict(row), "inbox")
             for row in db.execute(
